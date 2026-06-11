@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "node",
+    "lib": ["DOM", "ES2022"],
+    "strict": true,
+    "noImplicitAny": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "allowJs": true,
+    "noEmit": true,
+    "importHelpers": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["main.ts", "cli.ts", "ui.ts"]
+}

@@ -1,0 +1,15 @@
+/*
+ * Minimal styles for the YouTube Transcribe plugin.
+ * Widens the URL input in the prompt modal and softens the settings footnote.
+ */
+
+/* Make the URL field fill the modal width for easier pasting. */
+.ytt-url-input {
+  width: 100%;
+}
+
+/* De-emphasize the captions-vs-cloud explanatory note in settings. */
+.ytt-settings-note {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
