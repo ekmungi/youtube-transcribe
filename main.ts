@@ -5,7 +5,13 @@
  */
 
 import { FileSystemAdapter, Notice, Plugin, TFile } from "obsidian";
-import { CliSpawnError, CliSuccess, runTranscribe, Strategy } from "./cli";
+import {
+  CliSpawnError,
+  CliSuccess,
+  OutputTarget,
+  runTranscribe,
+  Strategy,
+} from "./cli";
 import { ConfirmModal, UrlPromptModal } from "./ui";
 import { DEFAULT_SETTINGS, YttSettings, YttSettingTab } from "./settings";
 
@@ -135,7 +141,8 @@ export default class YouTubeTranscribePlugin extends Plugin {
       const result = await runTranscribe(
         this.settings.executablePath,
         url,
-        strategy
+        strategy,
+        this.outputTarget()
       );
 
       if (result.ok) {
@@ -249,5 +256,24 @@ export default class YouTubeTranscribePlugin extends Plugin {
 
     // Strip the base and any leading separator left behind.
     return normalized.slice(base.length).replace(/^\/+/, "");
+  }
+
+  /**
+   * Build the per-run output target from settings. Returns undefined to leave
+   * the location to the CLI's own config -- when no folder is configured, or
+   * the vault has no filesystem base path (e.g. a non-filesystem adapter).
+   *
+   * @returns An OutputTarget for this vault, or undefined to use CLI config.
+   */
+  private outputTarget(): OutputTarget | undefined {
+    const folder = this.settings.transcriptFolder.trim();
+    if (!folder) {
+      return undefined;
+    }
+    const adapter = this.app.vault.adapter;
+    if (!(adapter instanceof FileSystemAdapter)) {
+      return undefined;
+    }
+    return { vault: adapter.getBasePath(), folder };
   }
 }

@@ -102,6 +102,12 @@ export function parseCliOutput(line: string): CliResult {
   return { ok: true, data: parsed as unknown as CliSuccess };
 }
 
+// Optional per-run output target: vault root and a subfolder within it.
+export interface OutputTarget {
+  readonly vault: string;
+  readonly folder: string;
+}
+
 /**
  * Run `yt-transcribe video <url> --json --strategy <strategy>` and parse it.
  *
@@ -112,14 +118,21 @@ export function parseCliOutput(line: string): CliResult {
  * @param execPath Path to the yt-transcribe executable (or "yt-transcribe").
  * @param url The YouTube URL to transcribe.
  * @param strategy Transcription strategy ("captions" or "cloud").
+ * @param target Optional vault/folder override for where the note is written.
  * @returns A promise resolving to a typed CliResult.
  */
 export function runTranscribe(
   execPath: string,
   url: string,
-  strategy: Strategy
+  strategy: Strategy,
+  target?: OutputTarget
 ): Promise<CliResult> {
   const args = ["video", url, "--json", "--strategy", strategy];
+  if (target) {
+    // Pass both together: --folder alone would combine with the CLI's
+    // configured vault, which may not be this vault.
+    args.push("--vault", target.vault, "--folder", target.folder);
+  }
   return new Promise((resolve, reject) => {
     execFile(
       execPath,

@@ -13,6 +13,7 @@ import {
   Setting,
 } from "obsidian";
 import { CliSpawnError, runSetupFfmpeg, Strategy } from "./cli";
+import { FolderSuggest } from "./folder-suggest";
 
 // Persisted plugin settings.
 export interface YttSettings {
@@ -22,6 +23,9 @@ export interface YttSettings {
   defaultStrategy: Strategy;
   // Whether to open the created note after a successful transcription.
   openAfterTranscribe: boolean;
+  // Vault-relative folder to write transcripts into. Empty = use the CLI's
+  // configured location (no override).
+  transcriptFolder: string;
 }
 
 // Defaults applied on first run and merged with any saved data.
@@ -29,6 +33,7 @@ export const DEFAULT_SETTINGS: YttSettings = {
   executablePath: "yt-transcribe",
   defaultStrategy: "captions",
   openAfterTranscribe: true,
+  transcriptFolder: "",
 };
 
 // Minimal surface the settings tab needs from the owning plugin. Declaring it
@@ -94,6 +99,26 @@ export class YttSettingTab extends PluginSettingTab {
             await this.host.saveSettings();
           })
       );
+
+    new Setting(containerEl)
+      .setName("Transcript folder")
+      .setDesc(
+        "Vault folder to write transcripts into (type to search). Leave empty to use the location configured in the CLI."
+      )
+      .addText((text) => {
+        text
+          .setPlaceholder("e.g. Sources/YouTube")
+          .setValue(this.host.settings.transcriptFolder)
+          .onChange(async (value) => {
+            this.host.settings.transcriptFolder = value.trim();
+            await this.host.saveSettings();
+          });
+        // Attach vault-folder autocomplete; persist on selection too.
+        new FolderSuggest(this.app, text.inputEl, (value) => {
+          this.host.settings.transcriptFolder = value;
+          void this.host.saveSettings();
+        });
+      });
 
     new Setting(containerEl)
       .setName("Open note after transcribing")

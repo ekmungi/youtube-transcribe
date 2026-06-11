@@ -79,6 +79,10 @@ offers a one-click retry using cloud speech-to-text.
 - **Executable path** - path to the `yt-transcribe` CLI. Defaults to
   `yt-transcribe` (assumes it is on your PATH). Set an absolute path if not.
 - **Default strategy** - `captions` (default) or `cloud`.
+- **Transcript folder** - vault folder to write transcripts into. Start typing
+  to search your vault's folders. Leave empty to use the location configured in
+  the CLI (`~/.yt-transcribe/config.yaml`). When set, the plugin writes into this
+  vault at the chosen folder regardless of the CLI's configured vault.
 - **Open note after transcribing** - whether to open the created note
   automatically on success (default on).
 - **Download ffmpeg** - a button that runs `yt-transcribe setup-ffmpeg`, which

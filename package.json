@@ -1,6 +1,6 @@
 {
   "name": "obsidian-youtube-transcribe",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Obsidian plugin that transcribes YouTube videos into vault notes via the local yt-transcribe CLI.",
   "type": "module",
