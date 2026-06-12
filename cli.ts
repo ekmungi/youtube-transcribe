@@ -173,6 +173,109 @@ export function runTranscribe(
   });
 }
 
+// One transcript within a playlist result. Mirrors a single video's success
+// fields; `cached` marks entries that were already in the vault.
+export interface PlaylistEntry {
+  readonly path: string;
+  readonly title: string;
+  readonly video_id: string;
+  readonly source: string;
+  readonly caption_language?: string;
+  readonly cached?: boolean;
+}
+
+// Successful playlist result: a count and one entry per video. The CLI writes
+// one markdown file per video; `transcripts[i].path` is each note's location.
+export interface PlaylistSuccess {
+  readonly count: number;
+  readonly transcripts: readonly PlaylistEntry[];
+}
+
+// Discriminated union returned by runPlaylist: ok === true => success.
+export type PlaylistResult =
+  | { readonly ok: true; readonly data: PlaylistSuccess }
+  | { readonly ok: false; readonly error: CliError };
+
+// Playlists can hold many videos; allow far longer than a single transcription.
+const PLAYLIST_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+
+/**
+ * Parse a playlist CLI JSON line into a typed PlaylistResult.
+ * Treats the presence of an `error` field as a failure regardless of shape.
+ *
+ * @param line The JSON line emitted by `yt-transcribe playlist --json`.
+ * @returns A typed PlaylistResult.
+ * @throws Error if the line is not valid JSON.
+ */
+export function parsePlaylistOutput(line: string): PlaylistResult {
+  const parsed = JSON.parse(line) as Record<string, unknown>;
+  if (typeof parsed.error === "string") {
+    return {
+      ok: false,
+      error: {
+        error: parsed.error,
+        error_type:
+          typeof parsed.error_type === "string" ? parsed.error_type : "Unknown",
+      },
+    };
+  }
+  return { ok: true, data: parsed as unknown as PlaylistSuccess };
+}
+
+/**
+ * Run `yt-transcribe playlist <url> --json --strategy <strategy>` and parse it.
+ *
+ * Resolves with a PlaylistResult (success or known error) whenever the CLI
+ * produced a parseable JSON line, even on exit code 1. Rejects with
+ * CliSpawnError only when the process could not be launched or emitted no
+ * parseable output.
+ *
+ * @param execPath Path to the yt-transcribe executable (or "yt-transcribe").
+ * @param url The YouTube playlist URL to transcribe.
+ * @param strategy Transcription strategy ("captions" or "cloud").
+ * @param target Optional vault/folder override for where notes are written.
+ * @returns A promise resolving to a typed PlaylistResult.
+ */
+export function runPlaylist(
+  execPath: string,
+  url: string,
+  strategy: Strategy,
+  target?: OutputTarget
+): Promise<PlaylistResult> {
+  const args = ["playlist", url, "--json", "--strategy", strategy];
+  if (target) {
+    args.push("--vault", target.vault, "--folder", target.folder);
+  }
+  return new Promise((resolve, reject) => {
+    execFile(
+      execPath,
+      args,
+      { timeout: PLAYLIST_TIMEOUT_MS, maxBuffer: MAX_BUFFER, windowsHide: true },
+      (err, stdout, stderr) => {
+        const errCode = (err as NodeJS.ErrnoException | null)?.code;
+        if (errCode === "ENOENT") {
+          reject(new CliSpawnError(`Executable not found: ${execPath}`, true));
+          return;
+        }
+
+        const line = lastNonEmptyLine(stdout) || lastNonEmptyLine(stderr);
+        if (line) {
+          try {
+            resolve(parsePlaylistOutput(line));
+            return;
+          } catch {
+            // Fall through to the spawn-error path below if JSON was invalid.
+          }
+        }
+
+        const reason =
+          err?.message ?? "CLI produced no parseable JSON output.";
+        reject(new CliSpawnError(reason, false));
+      }
+    );
+  });
+}
+
 // Result of an ffmpeg setup run: the install directory, or an error message.
 export type FfmpegSetupResult =
   | { readonly ok: true; readonly path: string }

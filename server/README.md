@@ -163,6 +163,10 @@ src/yt_transcribe/       # Core library
 
 ## Changelog
 
+### 0.10.0
+
+- `yt-transcribe playlist` gained `--json`, `--vault`, `--folder`, and `--strategy` options, mirroring the `video` command. `--json` emits a single line with a `count` and a per-video `transcripts` list (one markdown file is written per video). This lets the Obsidian plugin drive playlists and parse the results.
+
 ### 0.9.0
 
 - New `get_transcripts` MCP tool: accepts a single URL or a list, auto-detects each as a video or a playlist (via `url_classify`) and routes accordingly. A watch URL carrying `&list=` is treated as a single video.

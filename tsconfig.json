@@ -15,5 +15,5 @@
     "importHelpers": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["main.ts", "cli.ts", "ui.ts"]
+  "include": ["main.ts", "cli.ts", "ui.ts", "url-classify.ts"]
 }

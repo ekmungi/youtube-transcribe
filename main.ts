@@ -9,15 +9,20 @@ import {
   CliSpawnError,
   CliSuccess,
   OutputTarget,
+  PlaylistSuccess,
+  runPlaylist,
   runTranscribe,
   Strategy,
 } from "./cli";
+import { classifyYoutubeUrl } from "./url-classify";
 import { ConfirmModal, UrlPromptModal } from "./ui";
 import { DEFAULT_SETTINGS, YttSettings, YttSettingTab } from "./settings";
 
-// Matches youtube.com/watch?v=... and youtu.be/... links (with optional params).
+// Matches youtube.com watch/playlist/shorts/embed links and youtu.be/... links.
+// Broad on purpose: it only gates clipboard validation; classifyYoutubeUrl then
+// decides video vs playlist.
 const YOUTUBE_URL_RE =
-  /(?:https?:\/\/)?(?:www\.|m\.)?(?:youtube\.com\/watch\?[^ ]*v=|youtu\.be\/)[\w-]{6,}/i;
+  /(?:https?:\/\/)?(?:www\.|m\.)?(?:youtube\.com\/(?:watch\?|playlist\?|shorts\/|embed\/|v\/)|youtu\.be\/)\S+/i;
 
 /**
  * Test whether a string looks like a YouTube video URL.
@@ -126,15 +131,32 @@ export default class YouTubeTranscribePlugin extends Plugin {
   }
 
   /**
-   * Core transcription flow: run the CLI, then open or report the result.
-   * Handles success, known CLI errors (with an optional cloud retry), and
-   * spawn failures (e.g. missing executable).
+   * Entry flow: classify the URL and dispatch to the single-video or playlist
+   * flow. Single videos open the created note; playlists save one note per
+   * video and report the count.
    *
-   * @param url The YouTube URL to transcribe.
+   * @param url The YouTube URL (single video or playlist).
    * @param strategy Strategy for this attempt ("captions" or "cloud").
    * @returns A promise that resolves once the attempt is fully handled.
    */
   private async runFlow(url: string, strategy: Strategy): Promise<void> {
+    if (classifyYoutubeUrl(url) === "playlist") {
+      await this.runPlaylistFlow(url, strategy);
+      return;
+    }
+    await this.runVideoFlow(url, strategy);
+  }
+
+  /**
+   * Single-video flow: run the CLI, then open or report the result. Handles
+   * success, known CLI errors (with an optional cloud retry), and spawn
+   * failures (e.g. missing executable).
+   *
+   * @param url The YouTube video URL to transcribe.
+   * @param strategy Strategy for this attempt ("captions" or "cloud").
+   * @returns A promise that resolves once the attempt is fully handled.
+   */
+  private async runVideoFlow(url: string, strategy: Strategy): Promise<void> {
     // Persistent "Transcribing..." Notice (0 = stays until we hide it).
     const progress = new Notice("Transcribing...", 0);
     try {
@@ -163,18 +185,60 @@ export default class YouTubeTranscribePlugin extends Plugin {
       new Notice(`Transcription failed: ${result.error.error}`);
     } catch (err) {
       // Spawn-level failure (executable missing or no parseable output).
-      if (err instanceof CliSpawnError && err.notFound) {
-        new Notice(
-          "yt-transcribe not found. Set the executable path in plugin settings."
-        );
-      } else {
-        const message =
-          err instanceof Error ? err.message : "Unknown error.";
-        new Notice(`yt-transcribe failed to run: ${message}`);
-      }
+      this.reportRunError(err);
     } finally {
       // Always dismiss the persistent progress Notice.
       progress.hide();
+    }
+  }
+
+  /**
+   * Playlist flow: run the CLI's playlist command (which writes one note per
+   * video), then report the count and open the first note. Handles known CLI
+   * errors and spawn failures.
+   *
+   * @param url The YouTube playlist URL.
+   * @param strategy Strategy for this run ("captions" or "cloud").
+   * @returns A promise that resolves once the attempt is fully handled.
+   */
+  private async runPlaylistFlow(url: string, strategy: Strategy): Promise<void> {
+    const progress = new Notice("Transcribing playlist...", 0);
+    try {
+      const result = await runPlaylist(
+        this.settings.executablePath,
+        url,
+        strategy,
+        this.outputTarget()
+      );
+
+      if (result.ok) {
+        await this.handlePlaylistSuccess(result.data);
+        return;
+      }
+
+      new Notice(`Playlist failed: ${result.error.error}`);
+    } catch (err) {
+      this.reportRunError(err);
+    } finally {
+      progress.hide();
+    }
+  }
+
+  /**
+   * Report a spawn-level failure from a CLI run as a user Notice. Shared by the
+   * video and playlist flows.
+   *
+   * @param err The error thrown by a run* function.
+   * @returns void
+   */
+  private reportRunError(err: unknown): void {
+    if (err instanceof CliSpawnError && err.notFound) {
+      new Notice(
+        "yt-transcribe not found. Set the executable path in plugin settings."
+      );
+    } else {
+      const message = err instanceof Error ? err.message : "Unknown error.";
+      new Notice(`yt-transcribe failed to run: ${message}`);
     }
   }
 
@@ -210,14 +274,46 @@ export default class YouTubeTranscribePlugin extends Plugin {
       : `Saved: ${data.title} (${data.source})`;
     new Notice(label);
 
-    if (!this.settings.openAfterTranscribe) {
+    if (this.settings.openAfterTranscribe) {
+      await this.openNoteAtPath(data.path);
+    }
+  }
+
+  /**
+   * Handle a successful playlist result: report how many notes were saved vs
+   * already in the vault, then open the first note when enabled. The CLI has
+   * already written one markdown file per video.
+   *
+   * @param data The parsed playlist success payload (one entry per video).
+   * @returns A promise that resolves once reported/opened.
+   */
+  private async handlePlaylistSuccess(data: PlaylistSuccess): Promise<void> {
+    const fresh = data.transcripts.filter((t) => !t.cached).length;
+    const cached = data.count - fresh;
+    new Notice(
+      `Playlist: ${data.count} transcript(s) -- ${fresh} new, ${cached} already in vault`
+    );
+
+    if (!this.settings.openAfterTranscribe || data.transcripts.length === 0) {
       return;
     }
+    // Open the first video's note as an entry point into the saved set.
+    await this.openNoteAtPath(data.transcripts[0].path);
+  }
 
-    const relPath = this.toVaultRelativePath(data.path);
+  /**
+   * Open a note at an absolute filesystem path inside this vault. Shows a
+   * Notice and returns when the path is outside the vault's base path. Shared
+   * by the video and playlist flows.
+   *
+   * @param absPath Absolute path to the note as reported by the CLI.
+   * @returns A promise that resolves once the note is opened/reported.
+   */
+  private async openNoteAtPath(absPath: string): Promise<void> {
+    const relPath = this.toVaultRelativePath(absPath);
     if (relPath === null) {
       // File exists but is outside this vault's base path; report the location.
-      new Notice(`Note saved outside this vault: ${data.path}`);
+      new Notice(`Note saved outside this vault: ${absPath}`);
       return;
     }
 

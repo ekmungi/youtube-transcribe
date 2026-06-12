@@ -403,6 +403,125 @@ class TestPlaylistCommand:
         assert result.exit_code != 0
 
 
+class TestPlaylistJsonOutput:
+    """Tests for `yt-transcribe playlist <url> --json` (the plugin contract)."""
+
+    def test_json_emits_transcripts_list(
+        self, runner: CliRunner, sample_config: Config,
+        sample_video: VideoInfo, sample_transcript: Transcript,
+    ) -> None:
+        """--json emits one line with a count and a per-video transcripts list."""
+        import json
+
+        from yt_transcribe.cli import cli
+        from yt_transcribe.download import VideoData
+
+        video_data = VideoData(
+            video_info=sample_video, captions=None,
+            audio_url=None, raw_info={"id": "abc123abcde"},
+        )
+        with (
+            patch("yt_transcribe.cli.load_config", return_value=sample_config),
+            patch(
+                "yt_transcribe.cli.download.get_playlist_info",
+                return_value=(sample_video, sample_video),
+            ),
+            patch("yt_transcribe.cli.storage.find_existing", return_value=None),
+            patch("yt_transcribe.cli.extract_video_data", return_value=video_data),
+            patch(
+                "yt_transcribe.cli.transcribe.transcribe_video_fast",
+                return_value=sample_transcript,
+            ),
+            patch(
+                "yt_transcribe.cli.storage.save_transcript",
+                return_value=Path("/vault/Test Video [abc123abcde].md"),
+            ),
+        ):
+            result = runner.invoke(
+                cli, ["playlist", "https://youtube.com/playlist?list=PL1", "--json"],
+            )
+
+        assert result.exit_code == 0
+        lines = [ln for ln in result.output.splitlines() if ln.strip()]
+        assert len(lines) == 1
+        payload = json.loads(lines[0])
+        assert payload["count"] == 2
+        assert len(payload["transcripts"]) == 2
+        first = payload["transcripts"][0]
+        assert first["title"] == "Test Video"
+        assert first["video_id"] == "abc123abcde"
+        assert first["source"] == "manual_captions"
+        assert first["cached"] is False
+        assert first["path"].endswith("abc123abcde].md")
+
+    def test_json_vault_and_folder_overrides(
+        self, runner: CliRunner, sample_config: Config,
+        sample_video: VideoInfo, sample_transcript: Transcript,
+    ) -> None:
+        """--vault and --folder override where each transcript is written."""
+        from yt_transcribe.cli import cli
+        from yt_transcribe.download import VideoData
+
+        video_data = VideoData(
+            video_info=sample_video, captions=None,
+            audio_url=None, raw_info={"id": "abc123abcde"},
+        )
+        captured: dict[str, Config] = {}
+
+        def _capture_save(cfg: Config, _result: Transcript) -> Path:
+            captured["cfg"] = cfg
+            return Path("/v/x.md")
+
+        with (
+            patch("yt_transcribe.cli.load_config", return_value=sample_config),
+            patch(
+                "yt_transcribe.cli.download.get_playlist_info",
+                return_value=(sample_video,),
+            ),
+            patch("yt_transcribe.cli.storage.find_existing", return_value=None),
+            patch("yt_transcribe.cli.extract_video_data", return_value=video_data),
+            patch(
+                "yt_transcribe.cli.transcribe.transcribe_video_fast",
+                return_value=sample_transcript,
+            ),
+            patch("yt_transcribe.cli.storage.save_transcript", side_effect=_capture_save),
+        ):
+            result = runner.invoke(
+                cli,
+                ["playlist", "https://youtube.com/playlist?list=PL1",
+                 "--vault", "D:/MyVault", "--folder", "Media/YT", "--json"],
+            )
+
+        assert result.exit_code == 0
+        assert captured["cfg"].obsidian_vault_path == "D:/MyVault"
+        assert captured["cfg"].transcript_folder == "Media/YT"
+
+    def test_json_error_emits_error_object_and_exit_1(
+        self, runner: CliRunner, sample_config: Config,
+    ) -> None:
+        """A playlist-level error is reported as JSON with exit code 1."""
+        import json
+
+        from yt_transcribe.cli import cli
+        from yt_transcribe.exceptions import PlaylistNotFoundError
+
+        with (
+            patch("yt_transcribe.cli.load_config", return_value=sample_config),
+            patch(
+                "yt_transcribe.cli.download.get_playlist_info",
+                side_effect=PlaylistNotFoundError("no such playlist"),
+            ),
+        ):
+            result = runner.invoke(
+                cli, ["playlist", "https://youtube.com/playlist?list=BAD", "--json"],
+            )
+
+        assert result.exit_code == 1
+        payload = json.loads(result.output.strip())
+        assert payload["error_type"] == "PlaylistNotFoundError"
+        assert "no such playlist" in payload["error"]
+
+
 # -- list command ------------------------------------------------------------
 
 class TestListCommand:

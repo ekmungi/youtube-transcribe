@@ -74,6 +74,10 @@ The plugin adds two commands (Ctrl/Cmd-P):
 - **Transcribe YouTube video from clipboard** - reads the clipboard and transcribes
   directly.
 
+Both commands accept a single video **or a playlist** URL. The plugin auto-detects
+which it is: a playlist transcribes every video and saves a separate note per video
+(a `watch?v=...&list=...` URL is treated as the single video it points at).
+
 A ribbon icon in the left sidebar triggers the prompt. Settings cover the CLI
 executable path, default strategy, the transcript folder, and whether to open the
 note after transcribing.
