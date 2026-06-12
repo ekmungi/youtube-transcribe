@@ -163,6 +163,12 @@ src/yt_transcribe/       # Core library
 
 ## Changelog
 
+### 0.9.0
+
+- New `get_transcripts` MCP tool: accepts a single URL or a list, auto-detects each as a video or a playlist (via `url_classify`) and routes accordingly. A watch URL carrying `&list=` is treated as a single video.
+- `get_transcript`, `get_playlist_transcripts`, and `get_transcripts` gained an `output_dir` parameter so callers choose where transcripts are written, overriding the configured vault for that call (cache lookup is rooted there too).
+- Engine moved into the `youtube-transcribe` repository under `server/`, alongside the Obsidian plugin. The plugin and engine install independently (BRAT for the plugin, `uv` for the engine).
+
 ### 0.8.1
 
 - Transcript bodies are now formatted as flowing paragraphs instead of one caption fragment per line (which rendered as a tall single column). Segments are joined into readable paragraphs separated by [timestamp] markers; markers past one hour show as [H:MM:SS]. Applies to newly transcribed videos.
