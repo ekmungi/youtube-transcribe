@@ -1,104 +1,102 @@
-# YouTube Transcribe (Obsidian plugin)
+# YouTube Transcribe
 
-A lightweight Obsidian plugin that transcribes YouTube videos into vault notes by
-calling the local `yt-transcribe` CLI. It is captions-first: by default it fetches
-a video's existing captions (instant and free) and only uses cloud speech-to-text
-when you explicitly opt in.
+One repository, two installable pieces that share a single transcription engine:
 
-The plugin is a thin UI. The CLI does the work and writes a markdown note directly
-into your vault; the plugin's job is to take a URL, invoke the CLI, and open the
-resulting note.
+- **Obsidian plugin** (repo root) - transcribe a YouTube URL into a vault note from
+  inside Obsidian. Installed with [BRAT](https://github.com/TfTHacker/obsidian42-brat).
+- **Python engine** (`server/`) - the actual transcription engine, exposed as a
+  `yt-transcribe` CLI and a `yt-transcribe-server` MCP server for Claude Code.
 
-## How it works
+The plugin is a thin UI: it calls the `yt-transcribe` CLI, which writes a markdown
+note into your vault. The MCP server wraps the same engine so Claude Code can drive
+it directly. The two install in different places and never interfere - BRAT only
+reads the plugin's `manifest.json` + `main.js`; Claude Code only runs the Python
+entry point.
 
-1. You provide a YouTube URL (via a prompt or your clipboard).
-2. The plugin runs `yt-transcribe video <url> --json --strategy <captions|cloud>`.
-3. The CLI writes a transcript note into the vault and prints a JSON result.
-4. The plugin opens that note (or reports its location).
+## Repository layout
 
-## Prerequisites
+```
+.                       # Obsidian plugin (TypeScript)  -> installed by BRAT
+  main.ts, cli.ts, ...
+  manifest.json, main.js, styles.css
+server/                 # Python engine                 -> installed by uv
+  src/yt_transcribe/     #   shared engine: captions, storage, search
+  src/yt_transcribe/cli.py          #   -> yt-transcribe        (CLI)
+  src/yt_transcribe/mcp_server.py   #   -> yt-transcribe-server (MCP)
+  pyproject.toml, tests/
+```
 
-- The `yt-transcribe` CLI, version 0.7.0 or newer, installed and available on your
-  PATH (or configured explicitly in the plugin settings).
-- The vault path in `~/.yt-transcribe/config.yaml` must point at the same vault you
-  run this plugin in, so the note the CLI writes lands inside this vault and can be
-  opened directly.
-- For the `cloud` strategy only: an AssemblyAI API key and `ffmpeg`. You can install
-  ffmpeg with the "Download ffmpeg" button in this plugin's settings. The `captions`
-  strategy needs neither.
-
-## Installation
-
-### Via BRAT (recommended)
-
-[BRAT](https://github.com/TfTHacker/obsidian42-brat) installs and auto-updates
-plugins from GitHub before they reach the community store.
+## Install the plugin (Obsidian, via BRAT)
 
 1. Install the "BRAT" plugin from the community store and enable it.
-2. Open the command palette and run "BRAT: Add a beta plugin for testing".
-3. Enter this repository: `ekmungi/obsidian-youtube-transcribe`.
+2. Run "BRAT: Add a beta plugin for testing".
+3. Enter this repository: `ekmungi/youtube-transcribe`.
 4. BRAT downloads the latest release and installs the plugin.
 5. Enable "YouTube Transcribe" under Settings -> Community plugins.
 
-BRAT keeps the plugin updated as new releases are published.
+The plugin needs the `yt-transcribe` CLI on your PATH (install it below).
 
-### Manual
+## Install the engine (CLI + MCP server, via uv)
 
-1. Download `manifest.json`, `main.js`, and `styles.css` from the
-   [latest release](https://github.com/ekmungi/obsidian-youtube-transcribe/releases/latest).
-2. Copy them into `<vault>/.obsidian/plugins/youtube-transcribe/`.
-3. Enable "YouTube Transcribe" under Settings -> Community plugins.
-
-### Build from source
-
-```
-npm install
-npm run build
+```bash
+uv tool install "git+https://github.com/ekmungi/youtube-transcribe.git#subdirectory=server"
 ```
 
-This produces `main.js`. Copy it together with `manifest.json` and `styles.css`
-into the plugin folder above.
+This installs `yt-transcribe` (CLI, used by the plugin) and `yt-transcribe-server`
+(MCP server, used by Claude Code).
 
-## Usage
+### Register the MCP server with Claude Code
 
-The plugin adds two commands (open the command palette with Ctrl/Cmd-P):
+```bash
+claude mcp add yt-transcribe -- yt-transcribe-server
+```
 
-- **Transcribe YouTube video** - opens a prompt for a URL. If your clipboard holds
-  a YouTube link, the field is pre-filled. Submit to transcribe.
-- **Transcribe YouTube video from clipboard** - no prompt; reads the clipboard,
-  checks that it looks like a YouTube URL, and transcribes it directly.
+The server exposes these tools:
 
-There is also a ribbon icon (a YouTube glyph in the left sidebar) that triggers the
-prompt command.
+| Tool | Description |
+|------|-------------|
+| `get_transcripts` | Transcribe one URL or a list; auto-detects video vs playlist and routes each. Accepts `output_dir`. |
+| `get_transcript` | Transcribe a single video. Accepts `output_dir`. |
+| `get_playlist_transcripts` | Transcribe every video in a playlist. Accepts `output_dir`. |
+| `list_transcripts` | List saved transcripts in the vault. |
+| `search_transcripts` | Full-text search across saved transcripts. |
+| `server_status` | Server health: uptime, version, config, activity. |
 
-When a video has no captions and you ran with the `captions` strategy, the plugin
-offers a one-click retry using cloud speech-to-text.
+`output_dir` lets the caller choose where transcripts are written, overriding the
+configured vault location for that call.
 
-## Settings
+## Plugin usage
 
-- **Executable path** - path to the `yt-transcribe` CLI. Defaults to
-  `yt-transcribe` (assumes it is on your PATH). Set an absolute path if not.
-- **Default strategy** - `captions` (default) or `cloud`.
-- **Transcript folder** - vault folder to write transcripts into. Start typing
-  to search your vault's folders. Leave empty to use the location configured in
-  the CLI (`~/.yt-transcribe/config.yaml`). When set, the plugin writes into this
-  vault at the chosen folder regardless of the CLI's configured vault.
-- **Open note after transcribing** - whether to open the created note
-  automatically on success (default on).
-- **Download ffmpeg** - a button that runs `yt-transcribe setup-ffmpeg`, which
-  downloads a static ffmpeg into `~/.yt-transcribe/bin` and records it in the CLI
-  config. Only needed for the `cloud` strategy; `captions` never uses ffmpeg.
+The plugin adds two commands (Ctrl/Cmd-P):
 
-## Captions vs cloud
+- **Transcribe YouTube video** - prompts for a URL (pre-filled from the clipboard if
+  it holds a YouTube link).
+- **Transcribe YouTube video from clipboard** - reads the clipboard and transcribes
+  directly.
 
-- **captions** is instant and free. It fetches the captions already published with
-  the video. No API key or extra tooling required.
-- **cloud** sends the video's audio to AssemblyAI for speech-to-text. It requires
-  an AssemblyAI API key and `ffmpeg`, and incurs whatever cost your AssemblyAI plan
-  charges. Use it only when a video has no usable captions.
+A ribbon icon in the left sidebar triggers the prompt. Settings cover the CLI
+executable path, default strategy, the transcript folder, and whether to open the
+note after transcribing.
+
+## How transcription works
+
+The default `captions` strategy fetches a video's existing YouTube caption track
+(manual or auto-generated) - instant, free, nothing leaves YouTube. An opt-in
+`cloud` strategy sends audio to AssemblyAI for speech-to-text when a video has no
+captions; it requires an AssemblyAI API key and ffmpeg.
+
+Every saved transcript is Markdown with YAML frontmatter recording its provenance
+(`source`, `caption_language`).
+
+## Development
+
+- **Plugin**: `npm install && npm run build` (produces `main.js`).
+- **Engine**: `cd server && uv sync`, then `uv run python -m pytest`,
+  `uv run ruff check`, `uv run python -m mypy src`.
+
+When the CLI's `--json` output contract changes, update both the engine and the
+plugin together - they share that contract.
 
 ## Notes
 
-- Desktop only. The plugin uses Node's `child_process` to launch the CLI and the
-  filesystem adapter to resolve the created note, neither of which is available on
-  Obsidian mobile.
+- The plugin is desktop only: it uses Node's `child_process` to launch the CLI.

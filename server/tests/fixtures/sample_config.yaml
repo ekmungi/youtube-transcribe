@@ -1,0 +1,7 @@
+version: 1
+obsidian_vault_path: "C:/TestVault"
+transcript_folder: "Transcripts"
+transcription_strategy: "auto"
+whisper_model: "base"
+async_threshold_seconds: 180
+parallel_enabled: false
