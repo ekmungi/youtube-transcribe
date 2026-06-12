@@ -1,0 +1,64 @@
+[project]
+name = "yt-transcribe"
+version = "0.8.1"
+description = "Captions-first YouTube transcript extractor with MCP server and CLI"
+requires-python = ">=3.12"
+dependencies = [
+    "yt-dlp",
+    "assemblyai",
+    "mcp",
+    "click",
+    "rich",
+    "pyyaml",
+    "tenacity",
+    "keyring",
+]
+
+[project.optional-dependencies]
+# Cloud (AssemblyAI) strategy needs ffmpeg to extract audio. This extra ships a
+# static ffmpeg binary so 'pip install yt-transcribe[cloud]' just works. The
+# default captions strategy needs none of this.
+cloud = [
+    "imageio-ffmpeg",
+]
+
+[project.scripts]
+yt-transcribe = "yt_transcribe.cli:main"
+yt-transcribe-server = "yt_transcribe.mcp_server:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+
+# yt-dlp, assemblyai, and imageio-ffmpeg ship no type stubs; treat as Any
+[[tool.mypy.overrides]]
+module = ["yt_dlp", "assemblyai", "imageio_ffmpeg"]
+ignore_missing_imports = true
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "mypy>=1.19.1",
+    "pytest>=9.0.2",
+    "pytest-asyncio>=1.3.0",
+    "pytest-cov>=7.0.0",
+    "ruff>=0.15.5",
+    "types-pyyaml>=6.0.12",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/yt_transcribe"]
