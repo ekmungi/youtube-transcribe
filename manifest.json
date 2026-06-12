@@ -1,9 +1,9 @@
 {
   "id": "youtube-transcribe",
   "name": "YouTube Transcribe",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "minAppVersion": "1.5.0",
-  "description": "Transcribe YouTube videos into vault notes via the local yt-transcribe CLI (captions-first, no cloud by default).",
+  "description": "Transcribe YouTube videos and playlists into vault notes via the local yt-transcribe CLI (captions-first, no cloud by default).",
   "author": "Anant Vemuri",
   "isDesktopOnly": true
 }

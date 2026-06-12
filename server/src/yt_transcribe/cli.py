@@ -169,11 +169,93 @@ def _emit_json(payload: dict[str, object]) -> None:
     click.echo(json_mod.dumps(payload))
 
 
+def _playlist_json(
+    url: str,
+    strategy: str | None = None,
+    vault: str | None = None,
+    folder: str | None = None,
+) -> None:
+    """Transcribe a playlist and print one machine-readable JSON line.
+
+    The stable contract for tooling (e.g. the Obsidian plugin): on success a
+    JSON object with `count` and a `transcripts` list, one entry per video
+    (each with path/title/video_id/source/original_source/caption_language/
+    cached). One markdown file is written per video. On a playlist-level error
+    a JSON object with error/error_type and a non-zero exit code.
+
+    Args:
+        url: YouTube playlist URL.
+        strategy: Optional per-run strategy override ('captions' or 'cloud').
+        vault: Optional vault root override.
+        folder: Optional transcript subfolder override.
+    """
+    try:
+        cfg = _config_with_overrides(strategy, vault, folder)
+        videos = download.get_playlist_info(url)
+        transcripts: list[dict[str, object]] = []
+        for vid in videos:
+            existing = storage.find_existing(cfg, vid.video_id)
+            if existing is not None:
+                stored = storage.read_stored_transcript(existing)
+                transcripts.append({
+                    "path": str(existing),
+                    "title": vid.title,
+                    "video_id": vid.video_id,
+                    "source": "cache",
+                    "original_source": stored.source,
+                    "caption_language": stored.caption_language,
+                    "cached": True,
+                })
+                continue
+
+            video_data = extract_video_data(vid.url)
+            result = transcribe.transcribe_video_fast(video_data, cfg)
+            saved_path = storage.save_transcript(cfg, result)
+            transcripts.append({
+                "path": str(saved_path),
+                "title": vid.title,
+                "video_id": vid.video_id,
+                "source": result.source.value,
+                "original_source": result.source.value,
+                "caption_language": result.caption_language,
+                "cached": False,
+            })
+        _emit_json({"count": len(transcripts), "transcripts": transcripts})
+    except YtTranscribeError as exc:
+        # Playlist-level failure (invalid/empty playlist, or a per-video error):
+        # surface the message and type so callers can react precisely.
+        _emit_json({"error": str(exc), "error_type": type(exc).__name__})
+        raise SystemExit(1) from None
+
+
 @cli.command()
 @click.argument("url")
-def playlist(url: str) -> None:
-    """Transcribe all videos in a YouTube playlist."""
-    cfg = load_config()
+@click.option(
+    "--strategy", type=click.Choice(["captions", "cloud"]), default=None,
+    help="Override the configured strategy for this run.",
+)
+@click.option(
+    "--vault", default=None,
+    help="Override the Obsidian vault root for this run.",
+)
+@click.option(
+    "--folder", default=None,
+    help="Override the transcript subfolder (relative to the vault) for this run.",
+)
+@click.option(
+    "--json", "as_json", is_flag=True,
+    help="Emit a single JSON line with the per-video results (for tooling/plugins).",
+)
+def playlist(
+    url: str, strategy: str | None, vault: str | None,
+    folder: str | None, as_json: bool,
+) -> None:
+    """Transcribe all videos in a YouTube playlist (one file per video)."""
+    if as_json:
+        _playlist_json(url, strategy, vault, folder)
+        return
+
+    cfg = _config_with_overrides(strategy, vault, folder)
     videos = download.get_playlist_info(url)
     console.print(f"Found {len(videos)} videos in playlist")
 

@@ -32,7 +32,7 @@ from yt_transcribe.worker_runner import run_worker as _run_worker
 
 # Server start time for uptime reporting
 _START_TIME = time.monotonic()
-_VERSION = "0.9.0"
+_VERSION = "0.10.0"
 
 # Track server activity for status reporting
 _tool_call_count = 0
