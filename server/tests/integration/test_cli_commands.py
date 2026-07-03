@@ -321,6 +321,80 @@ class TestVideoJsonOutput:
         assert captured["cfg"].transcript_folder == "Media/YouTube"
 
 
+class TestVideoNoSave:
+    """Tests for `yt-transcribe video <url> --no-save` (transcript text to stdout, no file)."""
+
+    def test_no_save_emits_text_and_writes_no_file(
+        self, runner: CliRunner, sample_config: Config,
+        sample_video: VideoInfo, sample_transcript: Transcript,
+    ) -> None:
+        """--no-save transcribes and emits the transcript TEXT as JSON, saving nothing."""
+        import json
+
+        from yt_transcribe.cli import cli
+        from yt_transcribe.download import VideoData
+
+        video_data = VideoData(
+            video_info=sample_video, captions=None,
+            audio_url=None, raw_info={"id": "abc123abcde"},
+        )
+        with (
+            patch("yt_transcribe.cli.load_config", return_value=sample_config),
+            patch("yt_transcribe.cli.extract_video_data", return_value=video_data),
+            patch(
+                "yt_transcribe.cli.transcribe.transcribe_video_fast",
+                return_value=sample_transcript,
+            ),
+            patch("yt_transcribe.cli.storage.save_transcript") as mock_save,
+            patch("yt_transcribe.cli.storage.find_existing") as mock_find,
+        ):
+            result = runner.invoke(
+                cli, ["video", "https://youtube.com/watch?v=abc123abcde", "--no-save"],
+            )
+
+        assert result.exit_code == 0
+        payload = json.loads(result.output.strip())
+        assert payload["text"] == "Hello world transcript"
+        assert payload["title"] == "Test Video"
+        assert payload["video_id"] == "abc123abcde"
+        assert payload["source"] == "manual_captions"
+        assert payload["caption_language"] == "en"
+        assert payload["saved"] is False
+        mock_save.assert_not_called()  # no vault file written
+        mock_find.assert_not_called()  # no cache lookup -- always fresh
+
+    def test_no_save_error_emits_error_json_and_exit_1(
+        self, runner: CliRunner, sample_config: Config, sample_video: VideoInfo,
+    ) -> None:
+        """A known transcription error under --no-save is emitted as error JSON, exit 1."""
+        import json
+
+        from yt_transcribe.cli import cli
+        from yt_transcribe.download import VideoData
+        from yt_transcribe.exceptions import NoCaptionsError
+
+        video_data = VideoData(
+            video_info=sample_video, captions=None,
+            audio_url=None, raw_info={"id": "abc123abcde"},
+        )
+        with (
+            patch("yt_transcribe.cli.load_config", return_value=sample_config),
+            patch("yt_transcribe.cli.extract_video_data", return_value=video_data),
+            patch(
+                "yt_transcribe.cli.transcribe.transcribe_video_fast",
+                side_effect=NoCaptionsError("no captions here"),
+            ),
+        ):
+            result = runner.invoke(
+                cli, ["video", "https://youtube.com/watch?v=abc123abcde", "--no-save"],
+            )
+
+        assert result.exit_code == 1
+        payload = json.loads(result.output.strip())
+        assert payload["error_type"] == "NoCaptionsError"
+        assert "no captions here" in payload["error"]
+
+
 class TestSetupFfmpegCommand:
     """Tests for `yt-transcribe setup-ffmpeg`."""
 
