@@ -49,11 +49,19 @@ def cli() -> None:
     "--json", "as_json", is_flag=True,
     help="Emit a single JSON line with the result (for tooling/plugins).",
 )
+@click.option(
+    "--no-save", "no_save", is_flag=True,
+    help="Emit the transcript TEXT as one JSON line to stdout and write NO file "
+    "(for backend tooling that stores the transcript itself, e.g. Spyglass).",
+)
 def video(
     url: str, strategy: str | None, vault: str | None,
-    folder: str | None, as_json: bool,
+    folder: str | None, as_json: bool, no_save: bool,
 ) -> None:
     """Transcribe a single YouTube video."""
+    if no_save:
+        _video_nosave_json(url, strategy, vault, folder)
+        return
     if as_json:
         _video_json(url, strategy, vault, folder)
         return
@@ -167,6 +175,42 @@ def _emit_json(payload: dict[str, object]) -> None:
         payload: JSON-serializable result or error object.
     """
     click.echo(json_mod.dumps(payload))
+
+
+def _video_nosave_json(
+    url: str,
+    strategy: str | None = None,
+    vault: str | None = None,
+    folder: str | None = None,
+) -> None:
+    """Transcribe a video and print its transcript TEXT as one JSON line -- writing no file.
+
+    The text-to-stdout contract for backend tooling (e.g. the Spyglass service) that stores the
+    transcript itself and does NOT want a vault file: no cache lookup, no save. On success the JSON
+    carries title/video_id/source/caption_language/text/saved=false; on a known error it carries
+    error/error_type with a non-zero exit code. Human chrome is suppressed so stdout is pure JSON.
+
+    Args:
+        url: YouTube video URL to transcribe.
+        strategy: Optional per-run strategy override ('captions' or 'cloud').
+        vault: Accepted for CLI parity; unused here since nothing is written.
+        folder: Accepted for CLI parity; unused here since nothing is written.
+    """
+    try:
+        cfg = _config_with_overrides(strategy, vault, folder)
+        video_data = extract_video_data(url)
+        result = transcribe.transcribe_video_fast(video_data, cfg)
+        _emit_json({
+            "title": result.video.title,
+            "video_id": result.video.video_id,
+            "source": result.source.value,
+            "caption_language": result.caption_language,
+            "text": result.text,
+            "saved": False,
+        })
+    except YtTranscribeError as exc:
+        _emit_json({"error": str(exc), "error_type": type(exc).__name__})
+        raise SystemExit(1) from None
 
 
 def _playlist_json(
