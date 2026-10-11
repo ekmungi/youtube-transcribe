@@ -5,7 +5,7 @@ list_transcripts, search_transcripts, server_status.
 
 Lightweight tools (list, search, status) run inline.  Heavy tools
 (get_transcript, get_playlist) spawn a subprocess worker (see
-worker_runner.py) so the MCP server process stays lean (~20 MB) and
+worker_runner.py) so the MCP server process stays lean (~60 MB idle) and
 all transcription memory is freed when the worker exits.
 """
 

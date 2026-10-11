@@ -76,7 +76,13 @@ The plugin adds two commands (Ctrl/Cmd-P):
 
 Both commands accept a single video **or a playlist** URL. The plugin auto-detects
 which it is: a playlist transcribes every video and saves a separate note per video
-(a `watch?v=...&list=...` URL is treated as the single video it points at).
+(a `watch?v=...&list=...` URL is treated as the single video it points at). If some
+videos fail (for example, no captions), the rest are still saved and the notice names
+the failed ones; run the same playlist again to retry only those.
+
+The first time you transcribe in a session, the plugin checks the engine version
+(`yt-transcribe --version`) and shows a notice if the engine is older than the plugin
+needs. Update it with `uv tool upgrade yt-transcribe`.
 
 A ribbon icon in the left sidebar triggers the prompt. Settings cover the CLI
 executable path, default strategy, the transcript folder, and whether to open the

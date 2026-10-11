@@ -19,11 +19,11 @@ For videos in other languages, you get the transcript in the video's original la
 - **Captions-first**: YouTube's own caption tracks by default -- free, fast, nothing leaves YouTube
 - **Cloud fallback (opt-in)**: AssemblyAI speech-to-text for caption-less videos
 - **Obsidian vault output**: Markdown with YAML frontmatter (title, channel, url, video_id, date, duration, source, caption_language, tags)
-- **Playlist support**: Expand and transcribe entire YouTube playlists
-- **Deduplication**: Skips videos already saved in the vault
+- **Playlist support**: Expand and transcribe entire YouTube playlists; a video that fails is listed under `failed` and the rest continue
+- **Deduplication**: Skips videos already saved in the vault, so re-running a playlist retries only the failed videos
 - **Full-text search**: Search across all saved transcripts
 - **Real-time progress**: MCP server streams stage-by-stage progress during transcription
-- **Lean MCP server**: Subprocess worker model keeps the server small; heavy dependencies load only while a transcription runs and are freed when it finishes
+- **Lean MCP server**: Subprocess worker model keeps the idle server small (about 60 MB, mostly the MCP SDK); the transcription libraries load only while a transcription runs and are freed when it finishes
 
 ## Requirements
 
@@ -52,7 +52,7 @@ uv sync
 
 ## MCP server
 
-The MCP server exposes 5 tools via stdio transport for use with Claude Code, Claude Desktop, or any MCP-compatible client.
+The MCP server exposes 6 tools via stdio transport for use with Claude Code, Claude Desktop, or any MCP-compatible client.
 
 **Global install (recommended):** After `uv tool install`, add to `~/.claude.json`:
 
@@ -85,13 +85,16 @@ The MCP server exposes 5 tools via stdio transport for use with Claude Code, Cla
 
 | Tool | Description |
 |------|-------------|
+| `get_transcripts` | Transcribe one URL or a list; each is detected as a video or a playlist and routed |
 | `get_transcript` | Transcribe a single YouTube video and save it to the vault |
-| `get_playlist_transcripts` | Transcribe all videos in a playlist |
+| `get_playlist_transcripts` | Transcribe all videos in a playlist; failed videos are listed under `failed` |
 | `list_transcripts` | List saved transcripts in the vault |
 | `search_transcripts` | Full-text search across transcript content |
 | `server_status` | Check server health, uptime, config, and activity |
 
-`get_transcript` and `get_playlist_transcripts` accept an optional `strategy` argument (`captions` or `cloud`) and an `include_text` flag to return the transcript text inline instead of just the saved file path. Responses always include `source` and `caption_language` provenance.
+The transcription tools accept an optional `strategy` argument (`captions` or `cloud`), an `include_text` flag to return the transcript text inline instead of just the saved file path, and an `output_dir` to write somewhere other than the configured vault. Responses always include `source` and `caption_language` provenance.
+
+After upgrading the engine, restart the MCP client (for Claude Code, start a new session): the server is a long-running process and keeps running the code it started with. `server_status` reports the running version.
 
 ## CLI
 
@@ -132,14 +135,15 @@ The AssemblyAI API key is read from the `ASSEMBLYAI_API_KEY` environment variabl
 
 ## Obsidian plugin
 
-A companion Obsidian plugin lives in its own repository:
-[ekmungi/obsidian-youtube-transcribe](https://github.com/ekmungi/obsidian-youtube-transcribe).
-It is a thin UI over this CLI: paste a YouTube URL and it runs
-`yt-transcribe video <url> --json`, then opens the resulting vault note. Install
-it with [BRAT](https://github.com/TfTHacker/obsidian42-brat) or from its releases.
+The companion Obsidian plugin lives in the repository root, next to this
+folder. It is a thin UI over this CLI: paste a YouTube URL and it runs
+`yt-transcribe video <url> --json` (or `playlist`), then opens the resulting
+vault note. Install it with [BRAT](https://github.com/TfTHacker/obsidian42-brat).
 
-The plugin depends on this CLI's `--json` output contract, so changes to that
-contract must stay in sync across both repositories.
+The plugin depends on this CLI's `--json` output contract, so change both
+together. On the first transcription of a session it runs `yt-transcribe
+--version` and shows a notice when the engine is older than the plugin needs;
+update with `uv tool upgrade yt-transcribe`.
 
 ## Architecture
 
@@ -154,7 +158,8 @@ src/yt_transcribe/       # Core library
   assemblyai_engine.py   # Cloud speech-to-text engine (opt-in)
   storage.py             # Markdown output with frontmatter
   search.py              # Full-text search across vault
-  mcp_server.py          # MCP server (5 tools, stdio transport)
+  failures.py            # Shared record for a failed playlist video
+  mcp_server.py          # MCP server (6 tools, stdio transport)
   tool_schemas.py        # Static MCP tool schema definitions
   worker_runner.py       # Subprocess spawn, progress relay, watchdog
   worker.py              # Subprocess worker for memory-heavy tasks
@@ -162,6 +167,16 @@ src/yt_transcribe/       # Core library
 ```
 
 ## Changelog
+
+### 0.12.0
+
+- `yt-transcribe --version` prints the engine version. The MCP `server_status` tool now reads the same installed-package version instead of a separate constant that had fallen out of date. The Obsidian plugin (0.4.0) uses the flag to warn when the engine is older than it needs.
+- A playlist no longer stops at the first video that fails. Failed videos are listed under `failed` (`video_id`, `title`, `error`, `error_type`) in the `playlist --json` output and in the MCP playlist result, with a warning logged per video; the rest are saved. Re-run the same playlist to retry only the failed videos, since saved ones are skipped. Playlist-level errors (invalid or empty playlist) still exit 1.
+- Dependency updates clear every advisory `pip-audit` reported (yt-dlp, mcp, starlette, cryptography, pyjwt, python-multipart, anyio, idna, pydantic-settings, pygments, pytest). `yt-dlp` has a floor of 2026.7.4, `mcp` is held to `>=1.28.1,<2` (mcp 2.x removes the server API this code uses) and `assemblyai` to `>=1,<2` (tested on 1.6.1; the cloud path was not run against the live service).
+
+### 0.11.0
+
+- `yt-transcribe video --no-save` prints the transcript text as one JSON line and writes no file, for backend tools that store the transcript themselves.
 
 ### 0.10.0
 

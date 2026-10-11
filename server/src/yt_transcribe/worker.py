@@ -2,7 +2,7 @@
 
 Runs in a separate process so that heavy dependencies (assemblyai,
 yt-dlp) are loaded only here and fully freed when the worker exits.
-The MCP server stays lean at ~20 MB.
+The MCP server stays lean (~60 MB idle).
 
 Protocol:
   - Reads a JSON request from stdin.
