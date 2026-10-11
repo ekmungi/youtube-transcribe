@@ -8,8 +8,11 @@ from importlib.metadata import PackageNotFoundError
 from pathlib import Path
 from unittest.mock import patch
 
+from click.testing import CliRunner
+
 import yt_transcribe
 from yt_transcribe import mcp_server
+from yt_transcribe.cli import cli
 
 # pyproject.toml is the single place the version is edited.
 _PYPROJECT = Path(__file__).resolve().parents[2] / "pyproject.toml"
@@ -33,3 +36,17 @@ class TestServerStatusVersion:
     def test_status_reports_package_version(self):
         status = asyncio.run(mcp_server.handle_server_status())
         assert status["version"] == yt_transcribe.__version__
+
+
+class TestCliVersionFlag:
+    """`yt-transcribe --version` lets tooling (the Obsidian plugin) read the engine version."""
+
+    def test_version_flag_prints_package_version(self):
+        result = CliRunner().invoke(cli, ["--version"])
+        assert result.exit_code == 0
+        assert result.output.strip() == f"yt-transcribe, version {yt_transcribe.__version__}"
+
+    def test_unknown_flag_still_fails(self):
+        # Guards against --version swallowing option parsing for other flags.
+        result = CliRunner().invoke(cli, ["--no-such-flag"])
+        assert result.exit_code != 0

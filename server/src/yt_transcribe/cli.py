@@ -9,6 +9,7 @@ import click
 from rich.console import Console
 from rich.table import Table
 
+from yt_transcribe import __version__
 from yt_transcribe import config as config_mod
 from yt_transcribe import download, search, storage, transcribe
 from yt_transcribe.config import load_config
@@ -27,6 +28,7 @@ _CONFIG_KEYS: dict[str, type] = {
 
 
 @click.group()
+@click.version_option(__version__, prog_name="yt-transcribe")
 def cli() -> None:
     """YouTube transcript extractor -- yt-transcribe."""
 

@@ -14,6 +14,7 @@ import {
   runTranscribe,
   Strategy,
 } from "./cli";
+import { outdatedMessage, probeEngine } from "./engine-version";
 import { classifyYoutubeUrl } from "./url-classify";
 import { ConfirmModal, UrlPromptModal } from "./ui";
 import { DEFAULT_SETTINGS, YttSettings, YttSettingTab } from "./settings";
@@ -39,6 +40,10 @@ function looksLikeYoutubeUrl(text: string): boolean {
 export default class YouTubeTranscribePlugin extends Plugin {
   // Live settings; populated in onload from persisted data.
   settings: YttSettings = DEFAULT_SETTINGS;
+
+  // Set once the engine version has been checked, so the probe runs at most
+  // once per executable path rather than on every transcription.
+  private engineChecked = false;
 
   /**
    * Plugin lifecycle hook. Loads settings and registers commands, the ribbon
@@ -85,6 +90,27 @@ export default class YouTubeTranscribePlugin extends Plugin {
    */
   async saveSettings(): Promise<void> {
     await this.saveData(this.settings);
+    // The executable path may have changed, so check the engine again.
+    this.engineChecked = false;
+  }
+
+  /**
+   * Check the engine version once and warn when it is older than this plugin
+   * needs. Runs alongside the transcription rather than before it, so it adds
+   * no delay, and never throws: a failed probe is simply ignored.
+   * @returns A promise that resolves once the check (if any) has finished.
+   */
+  private async checkEngineOnce(): Promise<void> {
+    if (this.engineChecked) {
+      return;
+    }
+    this.engineChecked = true;
+    const message = outdatedMessage(
+      await probeEngine(this.settings.executablePath)
+    );
+    if (message) {
+      new Notice(message, 15000);
+    }
   }
 
   /**
@@ -140,6 +166,7 @@ export default class YouTubeTranscribePlugin extends Plugin {
    * @returns A promise that resolves once the attempt is fully handled.
    */
   private async runFlow(url: string, strategy: Strategy): Promise<void> {
+    void this.checkEngineOnce();
     if (classifyYoutubeUrl(url) === "playlist") {
       await this.runPlaylistFlow(url, strategy);
       return;
