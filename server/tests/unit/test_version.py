@@ -1,0 +1,35 @@
+"""Tests that the reported version is read from package metadata, not hardcoded."""
+
+from __future__ import annotations
+
+import asyncio
+import tomllib
+from importlib.metadata import PackageNotFoundError
+from pathlib import Path
+from unittest.mock import patch
+
+import yt_transcribe
+from yt_transcribe import mcp_server
+
+# pyproject.toml is the single place the version is edited.
+_PYPROJECT = Path(__file__).resolve().parents[2] / "pyproject.toml"
+
+
+class TestPackageVersion:
+    """__version__ must track pyproject.toml via installed metadata."""
+
+    def test_version_matches_pyproject(self):
+        declared = tomllib.loads(_PYPROJECT.read_text())["project"]["version"]
+        assert yt_transcribe.__version__ == declared
+
+    def test_resolve_returns_fallback_when_not_installed(self):
+        with patch("yt_transcribe.version", side_effect=PackageNotFoundError):
+            assert yt_transcribe._resolve_version() == "0.0.0+unknown"
+
+
+class TestServerStatusVersion:
+    """server_status must report the package version, not a copy of it."""
+
+    def test_status_reports_package_version(self):
+        status = asyncio.run(mcp_server.handle_server_status())
+        assert status["version"] == yt_transcribe.__version__

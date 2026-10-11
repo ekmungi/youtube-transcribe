@@ -23,7 +23,7 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
-from yt_transcribe import search, storage
+from yt_transcribe import __version__, search, storage
 from yt_transcribe.config import load_config
 from yt_transcribe.tool_schemas import TOOLS as _TOOLS
 from yt_transcribe.url_classify import classify_youtube_url
@@ -32,7 +32,6 @@ from yt_transcribe.worker_runner import run_worker as _run_worker
 
 # Server start time for uptime reporting
 _START_TIME = time.monotonic()
-_VERSION = "0.10.0"
 
 # Track server activity for status reporting
 _tool_call_count = 0
@@ -290,7 +289,7 @@ async def handle_server_status() -> dict[str, Any]:
 
     return {
         "status": "running",
-        "version": _VERSION,
+        "version": __version__,
         "uptime": f"{hours}h {minutes}m {seconds}s",
         "uptime_seconds": round(uptime_seconds),
         "tool_calls": _tool_call_count,
