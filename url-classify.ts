@@ -1,7 +1,6 @@
 /*
- * Classify a YouTube URL as a single video or a playlist.
- * Mirrors the engine's url_classify.py so the plugin can route a URL to the
- * right CLI command before running it.
+ * Classify a YouTube URL as a single video or a playlist, so the plugin can
+ * route it to the right CLI command (`video` or `playlist`) before running it.
  */
 
 export type UrlKind = "video" | "playlist";

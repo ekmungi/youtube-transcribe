@@ -1,7 +1,7 @@
 """Record shape for a playlist video that could not be transcribed.
 
-Shared by the CLI and the MCP worker so both report a failed video the same
-way: a playlist keeps going past one bad video and lists it under "failed".
+A playlist keeps going past one bad video and lists it under "failed"; this is
+the shape of each entry in that list.
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""yt-transcribe: captions-first YouTube transcript extractor (CLI + MCP server)."""
+"""yt-transcribe: YouTube transcript extractor that reads YouTube's own captions (CLI)."""
 
 from importlib.metadata import PackageNotFoundError, version
 

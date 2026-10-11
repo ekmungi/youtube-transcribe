@@ -1,4 +1,4 @@
-"""Tests for the playlist failure record shared by the CLI and the worker."""
+"""Tests for the playlist failure record the CLI reports."""
 
 from __future__ import annotations
 

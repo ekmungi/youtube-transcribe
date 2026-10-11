@@ -24,7 +24,7 @@ Describe 'Get-RunningFromTool' {
     It 'returns a launcher from the bin folder whose name starts with the tool name' {
         Mock Get-CimInstance { @(
             (New-FakeProcess 11 'yt-transcribe.exe' 'C:\bin\yt-transcribe.exe'),
-            (New-FakeProcess 12 'yt-transcribe-server.exe' 'C:\bin\yt-transcribe-server.exe')) }
+            (New-FakeProcess 12 'yt-transcribe-extra.exe' 'C:\bin\yt-transcribe-extra.exe')) }
         @(Get-RunningFromTool -ToolDir $toolDir -BinDir $binDir -ToolName 'yt-transcribe').Count | Should Be 2
     }
 

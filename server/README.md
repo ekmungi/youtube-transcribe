@@ -1,6 +1,6 @@
 # YT Transcribe
 
-YouTube transcript extractor. Fetches YouTube's own caption tracks (manual or auto-generated) in seconds and saves them as Markdown with YAML frontmatter to an Obsidian vault. Used through a CLI (by Claude Code through a skill, and by the Obsidian plugin) and an optional MCP server.
+YouTube transcript extractor. Fetches YouTube's own caption tracks (manual or auto-generated) in seconds and saves them as Markdown with YAML frontmatter to an Obsidian vault. Used through a CLI (by Claude Code through a skill, and by the Obsidian plugin).
 
 ## How it works
 
@@ -21,8 +21,6 @@ For videos in other languages, you get the transcript in the video's original la
 - **Playlist support**: Expand and transcribe entire YouTube playlists; a video that fails is listed under `failed` and the rest continue
 - **Deduplication**: Skips videos already saved in the vault, so re-running a playlist retries only the failed videos
 - **Full-text search**: Search across all saved transcripts
-- **Real-time progress**: MCP server streams stage-by-stage progress during transcription
-- **Lean MCP server**: Subprocess worker model keeps the idle server small (about 60 MB, mostly the MCP SDK); the transcription libraries load only while a transcription runs and are freed when it finishes
 
 ## Requirements
 
@@ -37,7 +35,7 @@ For videos in other languages, you get the transcript in the video's original la
 uv tool install "git+https://github.com/ekmungi/youtube-transcribe.git#subdirectory=server"
 ```
 
-This installs `yt-transcribe` (CLI) and `yt-transcribe-server` (MCP server) globally.
+This installs the `yt-transcribe` command globally.
 
 ### From source (development)
 
@@ -46,54 +44,6 @@ git clone https://github.com/ekmungi/youtube-transcribe.git
 cd youtube-transcribe/server
 uv sync
 ```
-
-## MCP server
-
-The MCP server is optional. Claude Code calls the CLI through the skill in `../skills/yt-transcribe` (see the top-level README), which needs no background process. Register the server for clients that cannot run shell commands, such as Claude Desktop chat.
-
-The MCP server exposes 6 tools via stdio transport for use with Claude Desktop or any MCP-compatible client.
-
-**Global install (recommended):** After `uv tool install`, add to `~/.claude.json`:
-
-```json
-{
-  "mcpServers": {
-    "yt-transcribe": {
-      "command": "yt-transcribe-server",
-      "args": []
-    }
-  }
-}
-```
-
-**From source:** Add to `~/.claude.json`:
-
-```json
-{
-  "mcpServers": {
-    "yt-transcribe": {
-      "command": "uv",
-      "args": ["run", "yt-transcribe-server"],
-      "cwd": "/path/to/youtube-transcription"
-    }
-  }
-}
-```
-
-**Available tools:**
-
-| Tool | Description |
-|------|-------------|
-| `get_transcripts` | Transcribe one URL or a list; each is detected as a video or a playlist and routed |
-| `get_transcript` | Transcribe a single YouTube video and save it to the vault |
-| `get_playlist_transcripts` | Transcribe all videos in a playlist; failed videos are listed under `failed` |
-| `list_transcripts` | List saved transcripts in the vault |
-| `search_transcripts` | Full-text search across transcript content |
-| `server_status` | Check server health, uptime, config, and activity |
-
-The transcription tools accept an `include_text` flag to return the transcript text inline instead of just the saved file path, and an `output_dir` to write somewhere other than the configured vault. Responses always include `source` and `caption_language` provenance.
-
-After upgrading the engine, restart the MCP client (for Claude Code, start a new session): the server is a long-running process and keeps running the code it started with. `server_status` reports the running version.
 
 ## CLI
 
@@ -153,19 +103,18 @@ src/yt_transcribe/       # Core library
   transcribe.py          # Transcript built from the caption track
   storage.py             # Markdown output with frontmatter
   search.py              # Full-text search across vault
-  failures.py            # Shared record for a failed playlist video
-  mcp_server.py          # MCP server (6 tools, stdio transport)
-  tool_schemas.py        # Static MCP tool schema definitions
-  worker_runner.py       # Subprocess spawn, progress relay, watchdog
-  worker.py              # Subprocess worker for memory-heavy tasks
+  failures.py            # Record for a failed playlist video
+  video_id.py            # Video ID from a YouTube URL
   cli.py                 # CLI (click + rich)
 ```
 
 ## Changelog
 
-### Unreleased
+### 0.14.0
 
-- Added `skills/yt-transcribe/update-engine.ps1` (tooling around the engine; the engine code is unchanged). On Windows, `uv tool upgrade` fails while any process from the tool is running and leaves the `yt-transcribe.exe` launcher deleted, and a second plain upgrade then reports "Nothing to upgrade". The script refuses while the tool is in use (exit code 2), upgrades or installs, checks that `yt-transcribe --version` answers, and reinstalls when it does not. The Claude Code skill now tells Claude to run it. Pester tests are in `skills/yt-transcribe/update-engine.Tests.ps1`.
+- **The MCP server is removed.** Claude Code and the Obsidian plugin run the `yt-transcribe` command, so the server was a long-running process (about 60 to 80 MB per Claude session) that kept running the code it started with and held the install's files open on Windows. Gone with it: the `yt-transcribe-server` command, its six tools (`get_transcripts`, `get_transcript`, `get_playlist_transcripts`, `list_transcripts`, `search_transcripts`, `server_status`), the `output_dir` argument (use `--vault` and `--folder` on the CLI), the background worker and its progress protocol, the registration scripts, the URL classifier that only the server called (the plugin classifies links itself), and the `mcp` dependency with the libraries only it needed (the lock file goes from 53 to 24 packages). The CLI, its `--json` contract and the saved notes are unchanged.
+- If you registered the server in a client, remove the registration (for Claude Code: `claude mcp remove yt-transcribe`). After upgrading, an old `yt-transcribe-server` launcher can remain in uv's executable folder (`~/.local/bin`); delete it.
+- Added `skills/yt-transcribe/update-engine.ps1` (tooling around the engine). On Windows, `uv tool upgrade` fails while any process from the tool is running and leaves the `yt-transcribe.exe` launcher deleted, and a second plain upgrade then reports "Nothing to upgrade". The script refuses while the tool is in use (exit code 2), upgrades or installs, checks that `yt-transcribe --version` answers, and reinstalls when it does not. The Claude Code skill now tells Claude to run it. Pester tests are in `skills/yt-transcribe/update-engine.Tests.ps1`.
 
 ### 0.13.0
 

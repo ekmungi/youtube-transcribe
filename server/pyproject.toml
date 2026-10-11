@@ -1,11 +1,10 @@
 [project]
 name = "yt-transcribe"
-version = "0.13.0"
-description = "YouTube transcript extractor (from YouTube's own captions) with a CLI and an optional MCP server"
+version = "0.14.0"
+description = "YouTube transcript extractor that reads YouTube's own captions, as a command-line tool"
 requires-python = ">=3.12"
 dependencies = [
     "yt-dlp>=2026.7.4",
-    "mcp>=1.28.1,<2",
     "click",
     "rich",
     "pyyaml",
@@ -14,11 +13,9 @@ dependencies = [
 
 [project.scripts]
 yt-transcribe = "yt_transcribe.cli:main"
-yt-transcribe-server = "yt_transcribe.mcp_server:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-asyncio_mode = "auto"
 
 [tool.ruff]
 line-length = 100
@@ -44,7 +41,6 @@ build-backend = "hatchling.build"
 dev = [
     "mypy>=1.19.1",
     "pytest>=9.0.2",
-    "pytest-asyncio>=1.3.0",
     "pytest-cov>=7.0.0",
     "ruff>=0.15.5",
     "types-pyyaml>=6.0.12",

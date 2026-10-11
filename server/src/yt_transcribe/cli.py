@@ -17,7 +17,7 @@ from yt_transcribe.download import extract_video_data
 from yt_transcribe.exceptions import YtTranscribeError
 from yt_transcribe.failures import failure_entry
 from yt_transcribe.models import Config
-from yt_transcribe.url_classify import extract_video_id
+from yt_transcribe.video_id import extract_video_id
 
 console = Console()
 

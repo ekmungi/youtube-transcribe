@@ -4,14 +4,13 @@ One repository, two installable pieces that share a single transcription engine:
 
 - **Obsidian plugin** (repo root) - transcribe a YouTube URL into a vault note from
   inside Obsidian. Installed with [BRAT](https://github.com/TfTHacker/obsidian42-brat).
-- **Python engine** (`server/`) - the actual transcription engine, exposed as a
-  `yt-transcribe` CLI and an optional `yt-transcribe-server` MCP server.
+- **Python engine** (`server/`) - the actual transcription engine, exposed as the
+  `yt-transcribe` command-line tool.
 
 The plugin is a thin UI: it calls the `yt-transcribe` CLI, which writes a markdown
 note into your vault. Claude Code does the same through a small skill
 (`skills/yt-transcribe`) that tells it which command to run, so there is no
-background process. The optional MCP server wraps the same engine for clients that
-cannot run shell commands. The pieces install in different places and never
+background process. The pieces install in different places and never
 interfere - BRAT only reads the plugin's `manifest.json` + `main.js`; Claude Code
 only runs the CLI.
 
@@ -24,7 +23,6 @@ only runs the CLI.
 server/                 # Python engine                 -> installed by uv
   src/yt_transcribe/     #   shared engine: captions, storage, search
   src/yt_transcribe/cli.py          #   -> yt-transcribe        (CLI)
-  src/yt_transcribe/mcp_server.py   #   -> yt-transcribe-server (MCP, optional)
   pyproject.toml, tests/
 skills/yt-transcribe/   # Claude Code skill             -> linked into ~/.claude/skills
 ```
@@ -45,10 +43,9 @@ The plugin needs the `yt-transcribe` CLI on your PATH (install it below).
 uv tool install "git+https://github.com/ekmungi/youtube-transcribe.git#subdirectory=server"
 ```
 
-This installs `yt-transcribe` (the CLI, used by the plugin and by Claude Code) and
-`yt-transcribe-server` (the optional MCP server). The launcher goes to
-`~/.local/bin` (make sure it is on PATH), the engine and its libraries to uv's tool
-folder, and its settings to `~/.yt-transcribe/config.yaml`.
+This installs the `yt-transcribe` command (used by the plugin and by Claude Code). The
+launcher goes to `~/.local/bin` (make sure it is on PATH), the engine and its
+libraries to uv's tool folder, and its settings to `~/.yt-transcribe/config.yaml`.
 
 ### Update the engine
 
@@ -62,8 +59,8 @@ read `server/uv.lock`, so a library or security update inside those ranges needs
 to GitHub. A push is needed only when the engine's code changes or when a fix needs a
 version outside the ranges. The next call runs the new code.
 
-On Windows, do not run it while anything from the tool is running (a transcription in
-progress, or the MCP server). The upgrade then stops halfway and deletes the
+On Windows, do not run it while anything from the tool is running (for example a
+transcription in progress). The upgrade then stops halfway and deletes the
 `yt-transcribe.exe` launcher, and a second plain upgrade reports "Nothing to upgrade"
 while the command is still missing. The script `skills/yt-transcribe/update-engine.ps1`
 runs the safe sequence: it refuses (exit code 2) while the tool is in use, upgrades or
@@ -87,29 +84,6 @@ ln -s /path/to/youtube-transcribe/skills/yt-transcribe ~/.claude/skills/yt-trans
 (Copying the folder works too, but then it does not follow updates.) When you paste a
 YouTube link, Claude loads the skill and runs `yt-transcribe video "<url>" --json`
 through its shell tool; the command saves the note, prints one line of JSON and exits.
-
-### Optional: the MCP server
-
-For clients that cannot run shell commands (such as Claude Desktop chat), register
-the server instead. It is a long-running process, about 60 MB while a client is open.
-
-```bash
-claude mcp add yt-transcribe -- yt-transcribe-server
-```
-
-The server exposes these tools:
-
-| Tool | Description |
-|------|-------------|
-| `get_transcripts` | Transcribe one URL or a list; auto-detects video vs playlist and routes each. Accepts `output_dir`. |
-| `get_transcript` | Transcribe a single video. Accepts `output_dir`. |
-| `get_playlist_transcripts` | Transcribe every video in a playlist. Accepts `output_dir`. |
-| `list_transcripts` | List saved transcripts in the vault. |
-| `search_transcripts` | Full-text search across saved transcripts. |
-| `server_status` | Server health: uptime, version, config, activity. |
-
-`output_dir` lets the caller choose where transcripts are written, overriding the
-configured vault location for that call.
 
 ## Plugin usage
 
