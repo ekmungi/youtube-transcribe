@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from yt_transcribe.url_classify import classify_youtube_url
+from yt_transcribe.url_classify import classify_youtube_url, extract_video_id
 
 
 class TestSingleVideo:
@@ -35,3 +35,28 @@ class TestPlaylist:
     ])
     def test_playlist_urls(self, url: str):
         assert classify_youtube_url(url) == "playlist"
+
+
+class TestExtractVideoId:
+    """extract_video_id pulls the 11-character ID out of a video URL."""
+
+    @pytest.mark.parametrize("url", [
+        "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        "https://youtu.be/dQw4w9WgXcQ",
+        "https://youtu.be/dQw4w9WgXcQ?t=42",
+        "https://www.youtube.com/shorts/dQw4w9WgXcQ",
+        "https://www.youtube.com/embed/dQw4w9WgXcQ",
+        "https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PLabc&index=3",
+        "https://www.youtube.com/watch?list=PLabc&v=dQw4w9WgXcQ",
+    ])
+    def test_returns_the_id(self, url: str):
+        assert extract_video_id(url) == "dQw4w9WgXcQ"
+
+    @pytest.mark.parametrize("url", [
+        "https://www.youtube.com/playlist?list=PLabc123",
+        "https://www.youtube.com/@somechannel",
+        "not a url",
+        "",
+    ])
+    def test_returns_none_when_there_is_no_video_id(self, url: str):
+        assert extract_video_id(url) is None

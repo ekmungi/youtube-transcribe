@@ -98,6 +98,8 @@ class TestVideoCommand:
         self, runner: CliRunner, sample_config: Config, sample_video: VideoInfo,
     ) -> None:
         """Already-cached transcript skips transcription."""
+        from unittest.mock import MagicMock
+
         from yt_transcribe.cli import cli
         from yt_transcribe.download import VideoData
 
@@ -112,6 +114,10 @@ class TestVideoCommand:
             patch("yt_transcribe.cli.load_config", return_value=sample_config),
             patch("yt_transcribe.cli.extract_video_data", return_value=video_data),
             patch("yt_transcribe.cli.storage.find_existing", return_value=Path("/v/cached.md")),
+            patch(
+                "yt_transcribe.cli.storage.read_stored_transcript",
+                return_value=MagicMock(title="Test Video"),
+            ),
         ):
             result = runner.invoke(cli, ["video", "https://youtube.com/watch?v=abc123abcde"])
 
@@ -184,7 +190,7 @@ class TestVideoJsonOutput:
             video_info=sample_video, captions=None,
             audio_url=None, raw_info={"id": "abc123abcde"},
         )
-        stored = MagicMock(source="auto_captions", caption_language="en")
+        stored = MagicMock(title="Test Video", source="auto_captions", caption_language="en")
         with (
             patch("yt_transcribe.cli.load_config", return_value=sample_config),
             patch("yt_transcribe.cli.extract_video_data", return_value=video_data),
@@ -594,6 +600,186 @@ class TestPlaylistJsonOutput:
         payload = json.loads(result.output.strip())
         assert payload["error_type"] == "PlaylistNotFoundError"
         assert "no such playlist" in payload["error"]
+
+
+class TestRepeatRequestSkipsYoutube:
+    """A video already in the vault is answered from the vault, with no YouTube request."""
+
+    @staticmethod
+    def _stored() -> object:
+        from unittest.mock import MagicMock
+
+        return MagicMock(
+            title="Stored Title", source="auto_captions", caption_language="en",
+        )
+
+    def test_json_cache_hit_never_contacts_youtube(
+        self, runner: CliRunner, sample_config: Config,
+    ) -> None:
+        """The ID in the URL is enough to find the saved note."""
+        import json
+
+        from yt_transcribe.cli import cli
+
+        with (
+            patch("yt_transcribe.cli.load_config", return_value=sample_config),
+            patch(
+                "yt_transcribe.cli.extract_video_data",
+                side_effect=AssertionError("must not contact YouTube"),
+            ),
+            patch(
+                "yt_transcribe.cli.storage.find_existing",
+                return_value=Path("/vault/cached.md"),
+            ) as find,
+            patch(
+                "yt_transcribe.cli.storage.read_stored_transcript",
+                return_value=self._stored(),
+            ),
+        ):
+            result = runner.invoke(
+                cli, ["video", "https://youtube.com/watch?v=abc123abcde", "--json"],
+            )
+
+        assert result.exit_code == 0
+        payload = json.loads(result.output.strip())
+        assert payload == {
+            "path": str(Path("/vault/cached.md")),
+            "title": "Stored Title",
+            "video_id": "abc123abcde",
+            "source": "cache",
+            "original_source": "auto_captions",
+            "caption_language": "en",
+            "cached": True,
+        }
+        find.assert_called_once()
+        assert find.call_args.args[1] == "abc123abcde"
+
+    def test_json_falls_back_to_the_title_in_the_filename(
+        self, runner: CliRunner, sample_config: Config,
+    ) -> None:
+        """Notes saved before titles were stored still report something readable."""
+        import json
+        from unittest.mock import MagicMock
+
+        from yt_transcribe.cli import cli
+
+        stored = MagicMock(title=None, source=None, caption_language=None)
+        with (
+            patch("yt_transcribe.cli.load_config", return_value=sample_config),
+            patch(
+                "yt_transcribe.cli.extract_video_data",
+                side_effect=AssertionError("must not contact YouTube"),
+            ),
+            patch(
+                "yt_transcribe.cli.storage.find_existing",
+                return_value=Path("/vault/Old Note [abc123abcde].md"),
+            ),
+            patch("yt_transcribe.cli.storage.read_stored_transcript", return_value=stored),
+        ):
+            result = runner.invoke(
+                cli, ["video", "https://youtube.com/watch?v=abc123abcde", "--json"],
+            )
+
+        assert json.loads(result.output.strip())["title"] == "Old Note [abc123abcde]"
+
+    def test_json_url_without_an_id_still_checks_the_vault_after_fetching(
+        self, runner: CliRunner, sample_config: Config, sample_video: VideoInfo,
+    ) -> None:
+        """A link form the ID pattern does not recognise keeps the old behaviour."""
+        import json
+
+        from yt_transcribe.cli import cli
+        from yt_transcribe.download import VideoData
+
+        video_data = VideoData(
+            video_info=sample_video, captions=None,
+            audio_url=None, raw_info={"id": "abc123abcde"},
+        )
+        with (
+            patch("yt_transcribe.cli.load_config", return_value=sample_config),
+            patch(
+                "yt_transcribe.cli.extract_video_data", return_value=video_data,
+            ) as fetch,
+            patch(
+                "yt_transcribe.cli.storage.find_existing",
+                return_value=Path("/vault/cached.md"),
+            ),
+            patch(
+                "yt_transcribe.cli.storage.read_stored_transcript",
+                return_value=self._stored(),
+            ),
+        ):
+            result = runner.invoke(
+                cli, ["video", "https://www.youtube.com/live/abc123abcde", "--json"],
+            )
+
+        assert result.exit_code == 0
+        assert json.loads(result.output.strip())["cached"] is True
+        fetch.assert_called_once()
+
+    def test_json_cache_miss_still_fetches_and_saves(
+        self, runner: CliRunner, sample_config: Config,
+        sample_video: VideoInfo, sample_transcript: Transcript,
+    ) -> None:
+        """Looking in the vault first must not stop a new video being transcribed."""
+        import json
+
+        from yt_transcribe.cli import cli
+        from yt_transcribe.download import VideoData
+
+        video_data = VideoData(
+            video_info=sample_video, captions=None,
+            audio_url=None, raw_info={"id": "abc123abcde"},
+        )
+        with (
+            patch("yt_transcribe.cli.load_config", return_value=sample_config),
+            patch(
+                "yt_transcribe.cli.extract_video_data", return_value=video_data,
+            ) as fetch,
+            patch("yt_transcribe.cli.storage.find_existing", return_value=None),
+            patch(
+                "yt_transcribe.cli.transcribe.transcribe_video_fast",
+                return_value=sample_transcript,
+            ),
+            patch(
+                "yt_transcribe.cli.storage.save_transcript",
+                return_value=Path("/vault/new.md"),
+            ),
+        ):
+            result = runner.invoke(
+                cli, ["video", "https://youtube.com/watch?v=abc123abcde", "--json"],
+            )
+
+        payload = json.loads(result.output.strip())
+        assert payload["cached"] is False
+        assert payload["path"] == str(Path("/vault/new.md"))
+        fetch.assert_called_once()
+
+    def test_text_mode_cache_hit_never_contacts_youtube(
+        self, runner: CliRunner, sample_config: Config,
+    ) -> None:
+        from yt_transcribe.cli import cli
+
+        with (
+            patch("yt_transcribe.cli.load_config", return_value=sample_config),
+            patch(
+                "yt_transcribe.cli.extract_video_data",
+                side_effect=AssertionError("must not contact YouTube"),
+            ),
+            patch(
+                "yt_transcribe.cli.storage.find_existing",
+                return_value=Path("/vault/cached.md"),
+            ),
+            patch(
+                "yt_transcribe.cli.storage.read_stored_transcript",
+                return_value=self._stored(),
+            ),
+        ):
+            result = runner.invoke(cli, ["video", "https://youtube.com/watch?v=abc123abcde"])
+
+        assert result.exit_code == 0
+        assert "cached" in result.output.lower()
+        assert "Stored Title" in result.output
 
 
 class TestPlaylistPartialFailure:

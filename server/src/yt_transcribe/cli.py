@@ -17,6 +17,7 @@ from yt_transcribe.download import extract_video_data
 from yt_transcribe.exceptions import YtTranscribeError
 from yt_transcribe.failures import failure_entry
 from yt_transcribe.models import Config, TranscriptionStrategy
+from yt_transcribe.url_classify import extract_video_id
 
 console = Console()
 
@@ -70,6 +71,17 @@ def video(
         return
 
     cfg = _config_with_overrides(strategy, vault, folder)
+
+    # Look the video up by the ID in the URL first: a repeat request is then
+    # answered from the vault without any request to YouTube.
+    video_id = extract_video_id(url)
+    cached = _cached_payload(cfg, video_id) if video_id else None
+    if cached is not None:
+        console.print(
+            f"[green]Already exists (cached):[/green] {escape(str(cached['title']))}"
+        )
+        return
+
     video_data = extract_video_data(url)
     video_info = video_data.video_info
 
@@ -112,6 +124,36 @@ def _config_with_overrides(
     return cfg
 
 
+def _cached_payload(
+    cfg: Config, video_id: str, title: str | None = None,
+) -> dict[str, object] | None:
+    """Build the JSON result for a video that is already saved, or None.
+
+    Args:
+        cfg: Configuration naming the vault folder to search.
+        video_id: YouTube video ID to look for.
+        title: Title to report; defaults to the one stored in the note, then to
+            the note's file name for notes saved before titles were stored.
+
+    Returns:
+        The same payload shape as a fresh transcription, with source "cache"
+        and cached true, or None when the video is not in the vault.
+    """
+    existing = storage.find_existing(cfg, video_id)
+    if existing is None:
+        return None
+    stored = storage.read_stored_transcript(existing)
+    return {
+        "path": str(existing),
+        "title": title or stored.title or existing.stem,
+        "video_id": video_id,
+        "source": "cache",
+        "original_source": stored.source,
+        "caption_language": stored.caption_language,
+        "cached": True,
+    }
+
+
 def _video_json(
     url: str,
     strategy: str | None = None,
@@ -133,21 +175,23 @@ def _video_json(
     """
     try:
         cfg = _config_with_overrides(strategy, vault, folder)
+
+        # Look the video up by the ID in the URL first: a repeat request is then
+        # answered from the vault without any request to YouTube.
+        video_id = extract_video_id(url)
+        cached = _cached_payload(cfg, video_id) if video_id else None
+        if cached is not None:
+            _emit_json(cached)
+            return
+
         video_data = extract_video_data(url)
         video_info = video_data.video_info
 
-        existing = storage.find_existing(cfg, video_info.video_id)
-        if existing is not None:
-            stored = storage.read_stored_transcript(existing)
-            _emit_json({
-                "path": str(existing),
-                "title": video_info.title,
-                "video_id": video_info.video_id,
-                "source": "cache",
-                "original_source": stored.source,
-                "caption_language": stored.caption_language,
-                "cached": True,
-            })
+        # A link form the ID pattern does not recognise: check the vault again
+        # now that YouTube has told us the ID.
+        cached = _cached_payload(cfg, video_info.video_id, video_info.title)
+        if cached is not None:
+            _emit_json(cached)
             return
 
         result = transcribe.transcribe_video_fast(video_data, cfg)

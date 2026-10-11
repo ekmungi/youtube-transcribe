@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import re
 import time
 from dataclasses import replace
 from pathlib import Path
@@ -26,7 +25,7 @@ from mcp.types import TextContent, Tool
 from yt_transcribe import __version__, search, storage
 from yt_transcribe.config import load_config
 from yt_transcribe.tool_schemas import TOOLS as _TOOLS
-from yt_transcribe.url_classify import classify_youtube_url
+from yt_transcribe.url_classify import classify_youtube_url, extract_video_id
 from yt_transcribe.worker_runner import log_to_client as _log
 from yt_transcribe.worker_runner import run_worker as _run_worker
 
@@ -37,25 +36,6 @@ _START_TIME = time.monotonic()
 _tool_call_count = 0
 _last_tool_call: str | None = None
 _active_tool: str | None = None
-
-# Pattern to extract video ID from common YouTube URL formats
-_VIDEO_ID_PATTERN = re.compile(
-    r"(?:v=|youtu\.be/|/embed/|/v/|/shorts/)([a-zA-Z0-9_-]{11})"
-)
-
-
-def _extract_video_id(url: str) -> str | None:
-    """Extract YouTube video ID from a URL.
-
-    Args:
-        url: YouTube video URL in any common format.
-
-    Returns:
-        11-character video ID, or None if not found.
-    """
-    match = _VIDEO_ID_PATTERN.search(url)
-    return match.group(1) if match else None
-
 
 # -- Lightweight tool handlers (run inline) --------------------------------
 
@@ -176,7 +156,7 @@ async def handle_get_transcript(
     config = load_config()
     if output_dir:
         config = replace(config, obsidian_vault_path=output_dir, transcript_folder="")
-    video_id = _extract_video_id(video_url)
+    video_id = extract_video_id(video_url)
     if video_id:
         existing_path = storage.find_existing(config, video_id)
         if existing_path is not None:
