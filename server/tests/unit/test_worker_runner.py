@@ -7,7 +7,7 @@ never conflated in the displayed message.
 
 from __future__ import annotations
 
-from yt_transcribe.worker_runner import _format_done_message
+from yt_transcribe.worker_runner import _format_done_message, _format_failed_message
 
 
 class TestFormatDoneMessage:
@@ -73,3 +73,22 @@ class TestFormatDoneMessage:
 
         assert "[cached]" in message
         assert "[total:" not in message
+
+
+class TestFormatFailedMessage:
+    """A failed playlist video is shown with its position and reason."""
+
+    def test_failed_event_shows_position_title_and_reason(self) -> None:
+        event = {
+            "stage": "video", "status": "failed", "index": 2, "total": 5,
+            "title": "Video 2", "error": "no captions",
+        }
+        message = _format_failed_message(event)
+        assert "[2/5]" in message
+        assert "Video 2" in message
+        assert "no captions" in message
+
+    def test_playlist_complete_mentions_failed_count(self) -> None:
+        event = {"stage": "playlist_complete", "status": "done", "count": 4,
+                 "failed": 2, "total_elapsed": 9.0}
+        assert "(2 failed)" in _format_done_message(event)

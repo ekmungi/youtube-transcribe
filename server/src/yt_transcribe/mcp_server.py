@@ -1,7 +1,7 @@
 """MCP server exposing YouTube transcript tools via stdio transport.
 
-5 tools: get_transcript, get_playlist_transcripts, list_transcripts,
-search_transcripts, server_status.
+6 tools: get_transcripts, get_transcript, get_playlist_transcripts,
+list_transcripts, search_transcripts, server_status.
 
 Lightweight tools (list, search, status) run inline.  Heavy tools
 (get_transcript, get_playlist) spawn a subprocess worker (see
@@ -215,7 +215,8 @@ async def handle_get_playlist_transcripts(
             transcripts are saved here instead of the configured vault.
 
     Returns:
-        Dict with per-video results carrying paths and source provenance.
+        Dict with per-video results carrying paths and source provenance, and
+        a 'failed' list for videos that could not be transcribed.
     """
     await _log(f"Processing playlist (strategy: {strategy or 'captions'})...")
     result = await _run_worker({
@@ -229,7 +230,9 @@ async def handle_get_playlist_transcripts(
         await _log(f"Playlist failed: {result['error']}", level="error")
     elif "transcripts" in result:
         count = len(result["transcripts"])
-        await _log(f"Playlist complete: {count} video(s) transcribed")
+        failed = len(result.get("failed", []))
+        suffix = f", {failed} failed (re-run to retry them)" if failed else ""
+        await _log(f"Playlist complete: {count} video(s) transcribed{suffix}")
     return result
 
 

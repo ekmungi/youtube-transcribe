@@ -316,3 +316,106 @@ class TestPlaylistInline:
 
         entry = result["transcripts"][0]
         assert "Cached transcript body" in entry["text"]
+
+
+class TestPlaylistPartialFailure:
+    """A failing video is reported in 'failed' and the rest still transcribe."""
+
+    @patch("yt_transcribe.worker._apply_overrides")
+    def test_failed_video_is_reported_and_others_saved(
+        self, mock_overrides: MagicMock,
+    ):
+        from yt_transcribe.exceptions import NoCaptionsError
+        from yt_transcribe.worker import _handle_get_playlist_transcripts
+
+        videos = [_make_video_info() for _ in range(3)]
+        for n, video in enumerate(videos, 1):
+            video.video_id = f"vid{n}"
+            video.title = f"Video {n}"
+        mock_overrides.return_value = _make_config()
+        transcript = _make_transcript()
+
+        with (
+            patch("yt_transcribe.download.get_playlist_info", return_value=videos),
+            patch("yt_transcribe.storage.find_existing", return_value=None),
+            patch(
+                "yt_transcribe.download.extract_video_data",
+                return_value=_make_video_data(videos[0]),
+            ),
+            patch(
+                "yt_transcribe.transcribe.transcribe_video_fast",
+                side_effect=[transcript, NoCaptionsError("no captions"), transcript],
+            ),
+            patch(
+                "yt_transcribe.storage.save_transcript",
+                return_value=Path("/vault/x.md"),
+            ),
+        ):
+            result = _handle_get_playlist_transcripts(
+                {"playlist_url": "https://youtube.com/playlist?list=PL123"}
+            )
+
+        assert len(result["transcripts"]) == 2
+        assert result["failed"] == [{
+            "video_id": "vid2",
+            "title": "Video 2",
+            "error": "no captions",
+            "error_type": "NoCaptionsError",
+        }]
+
+    @patch("yt_transcribe.worker._apply_overrides")
+    def test_failed_is_empty_when_everything_succeeds(
+        self, mock_overrides: MagicMock,
+    ):
+        from yt_transcribe.worker import _handle_get_playlist_transcripts
+
+        videos = [_make_video_info()]
+        mock_overrides.return_value = _make_config()
+
+        with (
+            patch("yt_transcribe.download.get_playlist_info", return_value=videos),
+            patch("yt_transcribe.storage.find_existing", return_value=None),
+            patch(
+                "yt_transcribe.download.extract_video_data",
+                return_value=_make_video_data(videos[0]),
+            ),
+            patch(
+                "yt_transcribe.transcribe.transcribe_video_fast",
+                return_value=_make_transcript(),
+            ),
+            patch(
+                "yt_transcribe.storage.save_transcript",
+                return_value=Path("/vault/x.md"),
+            ),
+        ):
+            result = _handle_get_playlist_transcripts(
+                {"playlist_url": "https://youtube.com/playlist?list=PL123"}
+            )
+
+        assert result["failed"] == []
+
+    @patch("yt_transcribe.worker._apply_overrides")
+    def test_unexpected_errors_still_abort(self, mock_overrides: MagicMock):
+        import pytest
+
+        from yt_transcribe.worker import _handle_get_playlist_transcripts
+
+        videos = [_make_video_info()]
+        mock_overrides.return_value = _make_config()
+
+        with (
+            patch("yt_transcribe.download.get_playlist_info", return_value=videos),
+            patch("yt_transcribe.storage.find_existing", return_value=None),
+            patch(
+                "yt_transcribe.download.extract_video_data",
+                return_value=_make_video_data(videos[0]),
+            ),
+            patch(
+                "yt_transcribe.transcribe.transcribe_video_fast",
+                side_effect=RuntimeError("boom"),
+            ),
+            pytest.raises(RuntimeError),
+        ):
+            _handle_get_playlist_transcripts(
+                {"playlist_url": "https://youtube.com/playlist?list=PL123"}
+            )

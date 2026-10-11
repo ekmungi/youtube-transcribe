@@ -7,6 +7,7 @@ from dataclasses import replace
 
 import click
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from yt_transcribe import __version__, download, search, storage, transcribe
@@ -14,6 +15,7 @@ from yt_transcribe import config as config_mod
 from yt_transcribe.config import load_config
 from yt_transcribe.download import extract_video_data
 from yt_transcribe.exceptions import YtTranscribeError
+from yt_transcribe.failures import failure_entry
 from yt_transcribe.models import Config, TranscriptionStrategy
 
 console = Console()
@@ -223,10 +225,14 @@ def _playlist_json(
     """Transcribe a playlist and print one machine-readable JSON line.
 
     The stable contract for tooling (e.g. the Obsidian plugin): on success a
-    JSON object with `count` and a `transcripts` list, one entry per video
-    (each with path/title/video_id/source/original_source/caption_language/
-    cached). One markdown file is written per video. On a playlist-level error
-    a JSON object with error/error_type and a non-zero exit code.
+    JSON object with `count`, a `transcripts` list (one entry per saved video,
+    each with path/title/video_id/source/original_source/caption_language/
+    cached) and a `failed` list (video_id/title/error/error_type for each video
+    that could not be transcribed; empty when none). One markdown file is
+    written per video. A failing video does not stop the rest, and re-running
+    the same playlist retries only the failed ones because saved videos are
+    skipped. On a playlist-level error (invalid or empty playlist) a JSON
+    object with error/error_type and a non-zero exit code.
 
     Args:
         url: YouTube playlist URL.
@@ -238,6 +244,7 @@ def _playlist_json(
         cfg = _config_with_overrides(strategy, vault, folder)
         videos = download.get_playlist_info(url)
         transcripts: list[dict[str, object]] = []
+        failed: list[dict[str, str]] = []
         for vid in videos:
             existing = storage.find_existing(cfg, vid.video_id)
             if existing is not None:
@@ -253,9 +260,15 @@ def _playlist_json(
                 })
                 continue
 
-            video_data = extract_video_data(vid.url)
-            result = transcribe.transcribe_video_fast(video_data, cfg)
-            saved_path = storage.save_transcript(cfg, result)
+            try:
+                video_data = extract_video_data(vid.url)
+                result = transcribe.transcribe_video_fast(video_data, cfg)
+                saved_path = storage.save_transcript(cfg, result)
+            except YtTranscribeError as exc:
+                # One bad video (no captions, rate limit, private) must not
+                # discard the rest of the playlist; record it and move on.
+                failed.append(failure_entry(vid.video_id, vid.title, exc))
+                continue
             transcripts.append({
                 "path": str(saved_path),
                 "title": vid.title,
@@ -265,10 +278,14 @@ def _playlist_json(
                 "caption_language": result.caption_language,
                 "cached": False,
             })
-        _emit_json({"count": len(transcripts), "transcripts": transcripts})
+        _emit_json({
+            "count": len(transcripts),
+            "transcripts": transcripts,
+            "failed": failed,
+        })
     except YtTranscribeError as exc:
-        # Playlist-level failure (invalid/empty playlist, or a per-video error):
-        # surface the message and type so callers can react precisely.
+        # Playlist-level failure (invalid or empty playlist): surface the
+        # message and type so callers can react precisely.
         _emit_json({"error": str(exc), "error_type": type(exc).__name__})
         raise SystemExit(1) from None
 
@@ -304,6 +321,7 @@ def playlist(
     videos = download.get_playlist_info(url)
     console.print(f"Found {len(videos)} videos in playlist")
 
+    failed_count = 0
     for i, vid in enumerate(videos, 1):
         existing = storage.find_existing(cfg, vid.video_id)
         if existing is not None:
@@ -311,11 +329,26 @@ def playlist(
             continue
 
         console.print(f"  [{i}/{len(videos)}] Transcribing: {vid.title}...")
-        # Use optimized single-call pipeline per video
-        video_data = extract_video_data(vid.url)
-        result = transcribe.transcribe_video_fast(video_data, cfg)
-        storage.save_transcript(cfg, result)
+        try:
+            # Use optimized single-call pipeline per video
+            video_data = extract_video_data(vid.url)
+            result = transcribe.transcribe_video_fast(video_data, cfg)
+            storage.save_transcript(cfg, result)
+        except YtTranscribeError as exc:
+            # One bad video must not stop the rest of the playlist.
+            failed_count += 1
+            console.print(
+                f"  [{i}/{len(videos)}] [red]Failed:[/red] {vid.title} -- "
+                f"{escape(str(exc))}"
+            )
+            continue
         console.print(f"  [{i}/{len(videos)}] [green]Saved:[/green] {vid.title}")
+
+    if failed_count:
+        console.print(
+            f"[yellow]{failed_count} failed.[/yellow] Re-run this command to "
+            "retry them; videos already saved are skipped."
+        )
 
 
 @cli.command("setup-ffmpeg")

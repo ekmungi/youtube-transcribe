@@ -15,6 +15,7 @@ import {
   Strategy,
 } from "./cli";
 import { outdatedMessage, probeEngine } from "./engine-version";
+import { summarizePlaylist } from "./playlist-summary";
 import { classifyYoutubeUrl } from "./url-classify";
 import { ConfirmModal, UrlPromptModal } from "./ui";
 import { DEFAULT_SETTINGS, YttSettings, YttSettingTab } from "./settings";
@@ -315,11 +316,9 @@ export default class YouTubeTranscribePlugin extends Plugin {
    * @returns A promise that resolves once reported/opened.
    */
   private async handlePlaylistSuccess(data: PlaylistSuccess): Promise<void> {
-    const fresh = data.transcripts.filter((t) => !t.cached).length;
-    const cached = data.count - fresh;
-    new Notice(
-      `Playlist: ${data.count} transcript(s) -- ${fresh} new, ${cached} already in vault`
-    );
+    // Failures stay on screen longer so the retry hint can be read.
+    const hasFailures = (data.failed?.length ?? 0) > 0;
+    new Notice(summarizePlaylist(data), hasFailures ? 15000 : undefined);
 
     if (!this.settings.openAfterTranscribe || data.transcripts.length === 0) {
       return;

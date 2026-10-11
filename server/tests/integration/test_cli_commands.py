@@ -596,6 +596,168 @@ class TestPlaylistJsonOutput:
         assert "no such playlist" in payload["error"]
 
 
+class TestPlaylistPartialFailure:
+    """One failing video must not abort the rest of the playlist."""
+
+    @staticmethod
+    def _three_videos(sample_video: VideoInfo) -> tuple[VideoInfo, ...]:
+        from dataclasses import replace
+
+        return tuple(
+            replace(sample_video, video_id=f"vid{n}vid{n}vi", title=f"Video {n}")
+            for n in (1, 2, 3)
+        )
+
+    def test_json_reports_failed_videos_and_keeps_going(
+        self, runner: CliRunner, sample_config: Config,
+        sample_video: VideoInfo, sample_transcript: Transcript,
+    ) -> None:
+        """--json lists the failed video and still saves the others (exit 0)."""
+        import json
+
+        from yt_transcribe.cli import cli
+        from yt_transcribe.download import VideoData
+        from yt_transcribe.exceptions import NoCaptionsError
+
+        videos = self._three_videos(sample_video)
+        video_data = VideoData(
+            video_info=sample_video, captions=None,
+            audio_url=None, raw_info={"id": "abc123abcde"},
+        )
+        with (
+            patch("yt_transcribe.cli.load_config", return_value=sample_config),
+            patch("yt_transcribe.cli.download.get_playlist_info", return_value=videos),
+            patch("yt_transcribe.cli.storage.find_existing", return_value=None),
+            patch("yt_transcribe.cli.extract_video_data", return_value=video_data),
+            patch(
+                "yt_transcribe.cli.transcribe.transcribe_video_fast",
+                side_effect=[sample_transcript, NoCaptionsError("no captions"),
+                             sample_transcript],
+            ),
+            patch(
+                "yt_transcribe.cli.storage.save_transcript",
+                return_value=Path("/vault/x.md"),
+            ),
+        ):
+            result = runner.invoke(
+                cli, ["playlist", "https://youtube.com/playlist?list=PL1", "--json"],
+            )
+
+        assert result.exit_code == 0
+        payload = json.loads(result.output.strip())
+        assert payload["count"] == 2
+        assert payload["failed"] == [{
+            "video_id": "vid2vid2vi",
+            "title": "Video 2",
+            "error": "no captions",
+            "error_type": "NoCaptionsError",
+        }]
+
+    def test_json_failed_is_empty_when_all_succeed(
+        self, runner: CliRunner, sample_config: Config,
+        sample_video: VideoInfo, sample_transcript: Transcript,
+    ) -> None:
+        """The failed key is always present so consumers need no existence check."""
+        import json
+
+        from yt_transcribe.cli import cli
+        from yt_transcribe.download import VideoData
+
+        video_data = VideoData(
+            video_info=sample_video, captions=None,
+            audio_url=None, raw_info={"id": "abc123abcde"},
+        )
+        with (
+            patch("yt_transcribe.cli.load_config", return_value=sample_config),
+            patch(
+                "yt_transcribe.cli.download.get_playlist_info",
+                return_value=(sample_video,),
+            ),
+            patch("yt_transcribe.cli.storage.find_existing", return_value=None),
+            patch("yt_transcribe.cli.extract_video_data", return_value=video_data),
+            patch(
+                "yt_transcribe.cli.transcribe.transcribe_video_fast",
+                return_value=sample_transcript,
+            ),
+            patch(
+                "yt_transcribe.cli.storage.save_transcript",
+                return_value=Path("/vault/x.md"),
+            ),
+        ):
+            result = runner.invoke(
+                cli, ["playlist", "https://youtube.com/playlist?list=PL1", "--json"],
+            )
+
+        assert json.loads(result.output.strip())["failed"] == []
+
+    def test_text_mode_prints_failures_and_a_retry_hint(
+        self, runner: CliRunner, sample_config: Config,
+        sample_video: VideoInfo, sample_transcript: Transcript,
+    ) -> None:
+        """Without --json the failure and a re-run hint are shown to the user."""
+        from yt_transcribe.cli import cli
+        from yt_transcribe.download import VideoData
+        from yt_transcribe.exceptions import CaptionFetchError
+
+        videos = self._three_videos(sample_video)
+        video_data = VideoData(
+            video_info=sample_video, captions=None,
+            audio_url=None, raw_info={"id": "abc123abcde"},
+        )
+        with (
+            patch("yt_transcribe.cli.load_config", return_value=sample_config),
+            patch("yt_transcribe.cli.download.get_playlist_info", return_value=videos),
+            patch("yt_transcribe.cli.storage.find_existing", return_value=None),
+            patch("yt_transcribe.cli.extract_video_data", return_value=video_data),
+            patch(
+                "yt_transcribe.cli.transcribe.transcribe_video_fast",
+                side_effect=[sample_transcript, sample_transcript,
+                             CaptionFetchError("rate limited")],
+            ),
+            patch("yt_transcribe.cli.storage.save_transcript"),
+        ):
+            result = runner.invoke(
+                cli, ["playlist", "https://youtube.com/playlist?list=PL1"],
+            )
+
+        assert result.exit_code == 0
+        assert "Failed" in result.output
+        assert "rate limited" in result.output
+        assert "1 failed" in result.output
+        assert "re-run" in result.output.lower()
+
+    def test_unexpected_errors_are_not_swallowed(
+        self, runner: CliRunner, sample_config: Config,
+        sample_video: VideoInfo,
+    ) -> None:
+        """Only known engine errors are recorded; a bug still surfaces."""
+        from yt_transcribe.cli import cli
+        from yt_transcribe.download import VideoData
+
+        video_data = VideoData(
+            video_info=sample_video, captions=None,
+            audio_url=None, raw_info={"id": "abc123abcde"},
+        )
+        with (
+            patch("yt_transcribe.cli.load_config", return_value=sample_config),
+            patch(
+                "yt_transcribe.cli.download.get_playlist_info",
+                return_value=(sample_video,),
+            ),
+            patch("yt_transcribe.cli.storage.find_existing", return_value=None),
+            patch("yt_transcribe.cli.extract_video_data", return_value=video_data),
+            patch(
+                "yt_transcribe.cli.transcribe.transcribe_video_fast",
+                side_effect=RuntimeError("boom"),
+            ),
+        ):
+            result = runner.invoke(
+                cli, ["playlist", "https://youtube.com/playlist?list=PL1", "--json"],
+            )
+
+        assert isinstance(result.exception, RuntimeError)
+
+
 # -- list command ------------------------------------------------------------
 
 class TestListCommand:

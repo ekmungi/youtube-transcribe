@@ -184,11 +184,23 @@ export interface PlaylistEntry {
   readonly cached?: boolean;
 }
 
-// Successful playlist result: a count and one entry per video. The CLI writes
-// one markdown file per video; `transcripts[i].path` is each note's location.
+// One playlist video the engine could not transcribe. `error_type` is the
+// engine's exception name (e.g. NoCaptionsError, CaptionFetchError).
+export interface PlaylistFailure {
+  readonly video_id: string;
+  readonly title: string;
+  readonly error: string;
+  readonly error_type: string;
+}
+
+// Successful playlist result: a count and one entry per saved video. The CLI
+// writes one markdown file per video; `transcripts[i].path` is each note's
+// location. `failed` lists videos that could not be transcribed; engines
+// before 0.12.0 do not send it, so it is optional.
 export interface PlaylistSuccess {
   readonly count: number;
   readonly transcripts: readonly PlaylistEntry[];
+  readonly failed?: readonly PlaylistFailure[];
 }
 
 // Discriminated union returned by runPlaylist: ok === true => success.

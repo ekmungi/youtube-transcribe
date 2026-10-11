@@ -98,7 +98,28 @@ def _format_done_message(event: dict[str, Any]) -> str:
         parts.append(f"[total: {total_seconds}s]")
     if event.get("source") == "cache":
         parts.append("[cached]")
+    if event.get("failed"):
+        parts.append(f"({event['failed']} failed)")
     return f"{' '.join(parts)} done"
+
+
+def _format_failed_message(event: dict[str, Any]) -> str:
+    """Format a 'failed' progress event (one playlist video) into a log line.
+
+    Args:
+        event: Parsed progress event dict from the worker's stderr, carrying
+            index/total, title and the error message.
+
+    Returns:
+        Human-readable status line naming the video and why it failed.
+    """
+    label = _STAGE_LABELS.get(event.get("stage", "?"), event.get("stage", "?"))
+    position = ""
+    if "index" in event and "total" in event:
+        position = f" [{event['index']}/{event['total']}]"
+    title = f" - {event['title']}" if "title" in event else ""
+    reason = f": {event['error']}" if "error" in event else ""
+    return f"{label}{position}{title} failed{reason}"
 
 
 async def _relay_progress(
@@ -138,6 +159,10 @@ async def _relay_progress(
                     await log_to_client(_format_started_message(event))
                 elif status == "done":
                     await log_to_client(_format_done_message(event))
+                elif status == "failed":
+                    await log_to_client(
+                        _format_failed_message(event), level="warning",
+                    )
             except (json.JSONDecodeError, KeyError):
                 error_lines.append(line)
         else:

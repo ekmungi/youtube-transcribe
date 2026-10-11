@@ -141,17 +141,22 @@ def _handle_get_playlist_transcripts(request: dict[str, Any]) -> dict[str, Any]:
     """Transcribe all videos in a playlist.
 
     Always processes inline regardless of total duration. Already-saved
-    videos are skipped and reported with source='cache'.
+    videos are skipped and reported with source='cache'. A video that fails
+    with an engine error is listed under 'failed' and the rest continue, so
+    re-running the same playlist retries only the failed ones.
 
     Args:
         request: Dict with playlist_url and optional strategy/include_text/
             output_dir keys.
 
     Returns:
-        Dict with per-video results carrying path and source metadata.
+        Dict with 'transcripts' (per-video path and source metadata) and
+        'failed' (video_id/title/error/error_type for each failed video).
     """
     from yt_transcribe import download, storage, transcribe
     from yt_transcribe.download import extract_video_data
+    from yt_transcribe.exceptions import YtTranscribeError
+    from yt_transcribe.failures import failure_entry
     from yt_transcribe.models import TranscriptSource
 
     playlist_url = request["playlist_url"]
@@ -164,6 +169,7 @@ def _handle_get_playlist_transcripts(request: dict[str, Any]) -> dict[str, Any]:
               elapsed=round(time.monotonic() - t0, 1), count=len(videos))
 
     results: list[dict[str, Any]] = []
+    failed: list[dict[str, str]] = []
     for i, video in enumerate(videos, 1):
         existing = storage.find_existing(config, video.video_id)
         if existing is not None:
@@ -190,9 +196,18 @@ def _handle_get_playlist_transcripts(request: dict[str, Any]) -> dict[str, Any]:
         _progress("video", "started",
                   index=i, total=len(videos), title=video.title)
         tv0 = time.monotonic()
-        video_data = extract_video_data(video.url)
-        transcript_result = transcribe.transcribe_video_fast(video_data, config)
-        saved_path = storage.save_transcript(config, transcript_result)
+        try:
+            video_data = extract_video_data(video.url)
+            transcript_result = transcribe.transcribe_video_fast(video_data, config)
+            saved_path = storage.save_transcript(config, transcript_result)
+        except YtTranscribeError as exc:
+            # One bad video (no captions, rate limit, private) must not discard
+            # the rest of the playlist; report it and continue.
+            _progress("video", "failed",
+                      index=i, total=len(videos), title=video.title,
+                      error=str(exc))
+            failed.append(failure_entry(video.video_id, video.title, exc))
+            continue
         _progress("video", "done",
                   index=i, total=len(videos), title=video.title,
                   elapsed=round(time.monotonic() - tv0, 1),
@@ -209,8 +224,8 @@ def _handle_get_playlist_transcripts(request: dict[str, Any]) -> dict[str, Any]:
 
     total_elapsed = round(time.monotonic() - t0, 1)
     _progress("playlist_complete", "done",
-              count=len(results), total_elapsed=total_elapsed)
-    return {"transcripts": results}
+              count=len(results), failed=len(failed), total_elapsed=total_elapsed)
+    return {"transcripts": results, "failed": failed}
 
 
 _HANDLERS: dict[str, Any] = {
