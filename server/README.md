@@ -52,7 +52,9 @@ uv sync
 
 ## MCP server
 
-The MCP server exposes 6 tools via stdio transport for use with Claude Code, Claude Desktop, or any MCP-compatible client.
+The MCP server is optional. Claude Code calls the CLI through the skill in `../skills/yt-transcribe` (see the top-level README), which needs no background process. Register the server for clients that cannot run shell commands, such as Claude Desktop chat.
+
+The MCP server exposes 6 tools via stdio transport for use with Claude Desktop or any MCP-compatible client.
 
 **Global install (recommended):** After `uv tool install`, add to `~/.claude.json`:
 
@@ -171,6 +173,7 @@ src/yt_transcribe/       # Core library
 ### 0.12.1
 
 - `yt-transcribe video` now looks for a saved note by the video ID in the URL before it contacts YouTube, so a video that is already in the vault is answered in about the engine's start-up time (about 2 seconds) instead of about 5, with no network request. The MCP server already worked this way. A link form the ID pattern does not recognise still works: the vault is checked again once YouTube reports the ID. The reported title now comes from the saved note.
+- The repository ships a Claude Code skill, `skills/yt-transcribe`, that runs the CLI instead of the MCP server. The MCP server stays in the package and is now optional.
 
 ### 0.12.0
 
