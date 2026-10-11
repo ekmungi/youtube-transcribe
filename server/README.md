@@ -168,6 +168,10 @@ src/yt_transcribe/       # Core library
 
 ## Changelog
 
+### 0.12.1
+
+- `yt-transcribe video` now looks for a saved note by the video ID in the URL before it contacts YouTube, so a video that is already in the vault is answered in about the engine's start-up time (about 2 seconds) instead of about 5, with no network request. The MCP server already worked this way. A link form the ID pattern does not recognise still works: the vault is checked again once YouTube reports the ID. The reported title now comes from the saved note.
+
 ### 0.12.0
 
 - `yt-transcribe --version` prints the engine version. The MCP `server_status` tool now reads the same installed-package version instead of a separate constant that had fallen out of date. The Obsidian plugin (0.4.0) uses the flag to warn when the engine is older than it needs.
