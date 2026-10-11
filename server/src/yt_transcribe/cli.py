@@ -9,9 +9,8 @@ import click
 from rich.console import Console
 from rich.table import Table
 
-from yt_transcribe import __version__
+from yt_transcribe import __version__, download, search, storage, transcribe
 from yt_transcribe import config as config_mod
-from yt_transcribe import download, search, storage, transcribe
 from yt_transcribe.config import load_config
 from yt_transcribe.download import extract_video_data
 from yt_transcribe.exceptions import YtTranscribeError
