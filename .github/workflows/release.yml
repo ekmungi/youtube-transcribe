@@ -1,6 +1,9 @@
 # Builds the plugin and publishes a GitHub Release with the BRAT/Obsidian
 # install assets (manifest.json, main.js, styles.css) when a version tag is
 # pushed. The tag must match the version in manifest.json with no "v" prefix.
+#
+# Run it by hand from the Actions tab (workflow_dispatch) to test the build
+# and the plugin tests without publishing: the release step only runs on a tag.
 
 name: Release Obsidian plugin
 
@@ -8,6 +11,7 @@ on:
   push:
     tags:
       - "*"
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -17,12 +21,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: "20.x"
+          # Matches the @types/node major the plugin is built against.
+          node-version: "22.x"
 
       - name: Install dependencies
         # npm install (not npm ci): the lockfile may be generated on a different
@@ -30,10 +35,15 @@ jobs:
         # optional deps (esbuild/@emnapi). npm install resolves them per-platform.
         run: npm install --no-audit --no-fund
 
+      - name: Test plugin
+        run: npm test
+
       - name: Build plugin
         run: npm run build
 
       - name: Create release with plugin assets
+        # Only a tag push publishes; a manual run stops after the build.
+        if: startsWith(github.ref, 'refs/tags/')
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
