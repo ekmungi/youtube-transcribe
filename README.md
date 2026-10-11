@@ -48,8 +48,33 @@ uv tool install "git+https://github.com/ekmungi/youtube-transcribe.git#subdirect
 This installs `yt-transcribe` (the CLI, used by the plugin and by Claude Code) and
 `yt-transcribe-server` (the optional MCP server). The launcher goes to
 `~/.local/bin` (make sure it is on PATH), the engine and its libraries to uv's tool
-folder, and its settings to `~/.yt-transcribe/config.yaml`. Update with
-`uv tool upgrade yt-transcribe`; the next call runs the new code.
+folder, and its settings to `~/.yt-transcribe/config.yaml`.
+
+### Update the engine
+
+```bash
+uv tool upgrade yt-transcribe
+```
+
+One command does both jobs: it takes the newest commit from GitHub, and it installs the
+newest library versions that `server/pyproject.toml` allows. The installed copy does not
+read `server/uv.lock`, so a library or security update inside those ranges needs no push
+to GitHub. A push is needed only when the engine's code changes or when a fix needs a
+version outside the ranges. The next call runs the new code.
+
+On Windows, do not run it while anything from the tool is running (a transcription in
+progress, or the MCP server). The upgrade then stops halfway and deletes the
+`yt-transcribe.exe` launcher, and a second plain upgrade reports "Nothing to upgrade"
+while the command is still missing. The script `skills/yt-transcribe/update-engine.ps1`
+runs the safe sequence: it refuses (exit code 2) while the tool is in use, upgrades or
+installs, checks that `yt-transcribe --version` answers, and reinstalls when it does not.
+
+```bash
+powershell -NoProfile -ExecutionPolicy Bypass -File skills/yt-transcribe/update-engine.ps1
+```
+
+(`-ExecutionPolicy Bypass` applies to that one process only; Windows PowerShell blocks
+scripts by default.)
 
 ### Use it from Claude Code (skill)
 
@@ -103,7 +128,7 @@ the failed ones; run the same playlist again to retry only those.
 
 The first time you transcribe in a session, the plugin checks the engine version
 (`yt-transcribe --version`) and shows a notice if the engine is older than the plugin
-needs. Update it with `uv tool upgrade yt-transcribe`.
+needs. Update it as described under "Update the engine" above.
 
 A ribbon icon in the left sidebar triggers the prompt. Settings cover the CLI
 executable path, the transcript folder, and whether to open the note after
@@ -123,6 +148,8 @@ Every saved transcript is Markdown with YAML frontmatter recording its provenanc
 - **Plugin**: `npm install && npm run build` (produces `main.js`).
 - **Engine**: `cd server && uv sync`, then `uv run python -m pytest`,
   `uv run ruff check`, `uv run python -m mypy src`.
+- **Update script**: `powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-Pester skills/yt-transcribe"`
+  (Pester 3 ships with Windows PowerShell; the tests fake uv and the process list).
 
 When the CLI's `--json` output contract changes, update both the engine and the
 plugin together - they share that contract.

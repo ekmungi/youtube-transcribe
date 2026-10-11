@@ -138,7 +138,8 @@ vault note. Install it with [BRAT](https://github.com/TfTHacker/obsidian42-brat)
 The plugin depends on this CLI's `--json` output contract, so change both
 together. On the first transcription of a session it runs `yt-transcribe
 --version` and shows a notice when the engine is older than the plugin needs;
-update with `uv tool upgrade yt-transcribe`.
+update it as described under "Update the engine" in the top-level README (on Windows, use
+`skills/yt-transcribe/update-engine.ps1` so a running process cannot break the upgrade).
 
 ## Architecture
 
@@ -161,6 +162,10 @@ src/yt_transcribe/       # Core library
 ```
 
 ## Changelog
+
+### Unreleased
+
+- Added `skills/yt-transcribe/update-engine.ps1` (tooling around the engine; the engine code is unchanged). On Windows, `uv tool upgrade` fails while any process from the tool is running and leaves the `yt-transcribe.exe` launcher deleted, and a second plain upgrade then reports "Nothing to upgrade". The script refuses while the tool is in use (exit code 2), upgrades or installs, checks that `yt-transcribe --version` answers, and reinstalls when it does not. The Claude Code skill now tells Claude to run it. Pester tests are in `skills/yt-transcribe/update-engine.Tests.ps1`.
 
 ### 0.13.0
 
