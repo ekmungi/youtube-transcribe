@@ -2,12 +2,11 @@
 
 import pytest
 
+from yt_transcribe import exceptions
 from yt_transcribe.exceptions import (
     CaptionFetchError,
-    DownloadError,
     NoCaptionsError,
     PlaylistNotFoundError,
-    TranscriptionError,
     VideoNotFoundError,
     VideoUnavailableError,
     YtTranscribeError,
@@ -28,9 +27,6 @@ class TestExceptionHierarchy:
     def test_playlist_not_found_is_yt_error(self):
         assert issubclass(PlaylistNotFoundError, YtTranscribeError)
 
-    def test_download_error_is_yt_error(self):
-        assert issubclass(DownloadError, YtTranscribeError)
-
     def test_no_captions_is_yt_error(self):
         assert issubclass(NoCaptionsError, YtTranscribeError)
 
@@ -43,8 +39,10 @@ class TestExceptionHierarchy:
         assert not issubclass(CaptionFetchError, NoCaptionsError)
         assert not issubclass(NoCaptionsError, CaptionFetchError)
 
-    def test_transcription_error_is_yt_error(self):
-        assert issubclass(TranscriptionError, YtTranscribeError)
+    def test_audio_and_speech_to_text_errors_are_gone(self):
+        """They belonged to the audio download and AssemblyAI paths."""
+        assert not hasattr(exceptions, "DownloadError")
+        assert not hasattr(exceptions, "TranscriptionError")
 
     def test_error_message_preserved(self):
         err = VideoNotFoundError("video xyz not found")

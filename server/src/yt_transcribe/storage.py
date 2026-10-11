@@ -136,7 +136,7 @@ def format_markdown(transcript: Transcript) -> str:
     duration_str = _format_duration(video.duration_seconds)
     today = date.today().isoformat()
 
-    # caption_language is None for AssemblyAI results; write YAML null
+    # caption_language can be unknown (None); write YAML null
     language_value = (
         f'"{transcript.caption_language}"'
         if transcript.caption_language is not None

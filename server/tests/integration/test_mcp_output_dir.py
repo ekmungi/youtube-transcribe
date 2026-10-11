@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from yt_transcribe.models import Config, TranscriptionStrategy
+from yt_transcribe.models import Config
 
 
 def _config(vault: str = "/configured/vault", folder: str = "Transcripts") -> Config:
@@ -16,7 +16,6 @@ def _config(vault: str = "/configured/vault", folder: str = "Transcripts") -> Co
     return Config(
         obsidian_vault_path=vault,
         transcript_folder=folder,
-        transcription_strategy=TranscriptionStrategy.CAPTIONS,
     )
 
 
@@ -72,7 +71,6 @@ class TestGetTranscriptOutputDir:
         mock_worker.assert_called_once_with({
             "command": "get_transcript",
             "video_url": "https://youtube.com/watch?v=abc123abcde",
-            "strategy": None,
             "include_text": False,
             "output_dir": "/tmp/out",
         })
@@ -128,7 +126,6 @@ class TestGetPlaylistOutputDir:
         mock_worker.assert_called_once_with({
             "command": "get_playlist_transcripts",
             "playlist_url": "https://youtube.com/playlist?list=PL123",
-            "strategy": None,
             "include_text": False,
             "output_dir": "/tmp/out",
         })

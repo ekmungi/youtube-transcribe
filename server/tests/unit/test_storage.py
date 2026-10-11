@@ -6,7 +6,6 @@ from yt_transcribe.models import (
     Config,
     Segment,
     Transcript,
-    TranscriptionStrategy,
     TranscriptSource,
     VideoInfo,
 )
@@ -26,7 +25,7 @@ def _make_config(tmp_path: Path) -> Config:
     return Config(
         obsidian_vault_path=str(tmp_path / "vault"),
         transcript_folder="Sources/YouTube Transcripts",
-        transcription_strategy=TranscriptionStrategy.CAPTIONS,    )
+    )
 
 
 def _make_video(
@@ -163,13 +162,13 @@ class TestFormatMarkdown:
         assert "source: auto_captions" in md
         assert 'caption_language: "de"' in md
 
-    def test_assemblyai_source_has_null_caption_language(self):
-        """Speech-to-text transcripts have no caption language (YAML null)."""
+    def test_unknown_caption_language_is_written_as_yaml_null(self):
+        """A caption track whose language is not known is stored as YAML null."""
         transcript = _make_transcript(
-            source=TranscriptSource.ASSEMBLYAI, caption_language=None,
+            source=TranscriptSource.AUTO_CAPTIONS, caption_language=None,
         )
         md = format_markdown(transcript)
-        assert "source: assemblyai" in md
+        assert "source: auto_captions" in md
         assert "caption_language: null" in md
 
 
@@ -278,16 +277,16 @@ class TestReadStoredTranscript:
         assert "Legacy body text" in stored.body
 
     def test_null_caption_language_parses_to_none(self, tmp_path: Path):
-        """YAML null (AssemblyAI transcripts) maps back to Python None."""
+        """YAML null (unknown caption language) maps back to Python None."""
         config = _make_config(tmp_path)
         transcript = _make_transcript(
-            source=TranscriptSource.ASSEMBLYAI, caption_language=None,
+            source=TranscriptSource.AUTO_CAPTIONS, caption_language=None,
         )
         saved_path = save_transcript(config, transcript)
 
         stored = read_stored_transcript(saved_path)
 
-        assert stored.source == "assemblyai"
+        assert stored.source == "auto_captions"
         assert stored.caption_language is None
 
     def test_body_is_content_after_closing_frontmatter(self, tmp_path: Path):

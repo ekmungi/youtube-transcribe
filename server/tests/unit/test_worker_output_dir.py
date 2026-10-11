@@ -6,7 +6,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from yt_transcribe.models import Config, TranscriptionStrategy, TranscriptSource
+from yt_transcribe.models import Config, TranscriptSource
 
 
 def _base_config() -> Config:
@@ -14,8 +14,6 @@ def _base_config() -> Config:
     return Config(
         obsidian_vault_path="/configured/vault",
         transcript_folder="Sources/YouTube Transcripts",
-        transcription_strategy=TranscriptionStrategy.CAPTIONS,
-        ffmpeg_location="",
     )
 
 
@@ -27,7 +25,7 @@ class TestApplyOverridesOutputDir:
         from yt_transcribe.worker import _apply_overrides
 
         with patch("yt_transcribe.config.load_config", return_value=_base_config()):
-            cfg = _apply_overrides(strategy=None, output_dir="/tmp/out")
+            cfg = _apply_overrides(output_dir="/tmp/out")
 
         assert cfg.obsidian_vault_path == "/tmp/out"
         assert cfg.transcript_folder == ""
@@ -37,21 +35,10 @@ class TestApplyOverridesOutputDir:
         from yt_transcribe.worker import _apply_overrides
 
         with patch("yt_transcribe.config.load_config", return_value=_base_config()):
-            cfg = _apply_overrides(strategy=None, output_dir=None)
+            cfg = _apply_overrides(output_dir=None)
 
         assert cfg.obsidian_vault_path == "/configured/vault"
         assert cfg.transcript_folder == "Sources/YouTube Transcripts"
-
-    def test_strategy_and_output_dir_apply_together(self):
-        """strategy and output_dir overrides are independent and both apply."""
-        from yt_transcribe.worker import _apply_overrides
-
-        with patch("yt_transcribe.config.load_config", return_value=_base_config()):
-            cfg = _apply_overrides(strategy="cloud", output_dir="/tmp/out")
-
-        assert cfg.transcription_strategy == TranscriptionStrategy.CLOUD
-        assert cfg.obsidian_vault_path == "/tmp/out"
-        assert cfg.transcript_folder == ""
 
 
 class TestHandlersThreadOutputDir:
@@ -63,7 +50,6 @@ class TestHandlersThreadOutputDir:
         from yt_transcribe.worker import _handle_get_transcript
 
         config = MagicMock()
-        config.transcription_strategy.value = "captions"
         mock_overrides.return_value = config
 
         video = MagicMock()
@@ -86,7 +72,7 @@ class TestHandlersThreadOutputDir:
                 "output_dir": "/tmp/out",
             })
 
-        mock_overrides.assert_called_once_with(None, "/tmp/out")
+        mock_overrides.assert_called_once_with("/tmp/out")
 
     @patch("yt_transcribe.worker._apply_overrides")
     def test_playlist_threads_output_dir(self, mock_overrides: MagicMock):
@@ -94,7 +80,6 @@ class TestHandlersThreadOutputDir:
         from yt_transcribe.worker import _handle_get_playlist_transcripts
 
         config = MagicMock()
-        config.transcription_strategy.value = "captions"
         mock_overrides.return_value = config
 
         with (
@@ -105,4 +90,4 @@ class TestHandlersThreadOutputDir:
                 "output_dir": "/tmp/out",
             })
 
-        mock_overrides.assert_called_once_with(None, "/tmp/out")
+        mock_overrides.assert_called_once_with("/tmp/out")

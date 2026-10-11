@@ -1,25 +1,15 @@
 [project]
 name = "yt-transcribe"
-version = "0.12.1"
-description = "Captions-first YouTube transcript extractor with MCP server and CLI"
+version = "0.13.0"
+description = "YouTube transcript extractor (from YouTube's own captions) with a CLI and an optional MCP server"
 requires-python = ">=3.12"
 dependencies = [
     "yt-dlp>=2026.7.4",
-    "assemblyai>=1,<2",
     "mcp>=1.28.1,<2",
     "click",
     "rich",
     "pyyaml",
     "tenacity",
-    "keyring",
-]
-
-[project.optional-dependencies]
-# Cloud (AssemblyAI) strategy needs ffmpeg to extract audio. This extra ships a
-# static ffmpeg binary so 'pip install yt-transcribe[cloud]' just works. The
-# default captions strategy needs none of this.
-cloud = [
-    "imageio-ffmpeg",
 ]
 
 [project.scripts]
@@ -41,9 +31,9 @@ select = ["E", "F", "I", "N", "W", "UP"]
 python_version = "3.12"
 strict = true
 
-# yt-dlp, assemblyai, and imageio-ffmpeg ship no type stubs; treat as Any
+# yt-dlp ships no type stubs; treat as Any
 [[tool.mypy.overrides]]
-module = ["yt_dlp", "assemblyai", "imageio_ffmpeg"]
+module = ["yt_dlp"]
 ignore_missing_imports = true
 
 [build-system]

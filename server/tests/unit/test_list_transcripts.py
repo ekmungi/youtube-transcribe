@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from yt_transcribe.models import Config, TranscriptionStrategy
+from yt_transcribe.models import Config
 from yt_transcribe.search import TranscriptEntry, list_transcripts
 
 # -- Fixtures ----------------------------------------------------------------
@@ -17,7 +17,7 @@ def config(tmp_path: Path) -> Config:
     return Config(
         obsidian_vault_path=str(tmp_path / "vault"),
         transcript_folder="Transcripts",
-        transcription_strategy=TranscriptionStrategy.CAPTIONS,    )
+    )
 
 
 def _write_md(folder: Path, filename: str, title: str, channel: str, video_id: str) -> Path:

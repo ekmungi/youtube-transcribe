@@ -22,8 +22,6 @@ def _make_video_info() -> MagicMock:
 def _make_config() -> MagicMock:
     """Create a mock Config with captions strategy."""
     config = MagicMock()
-    config.transcription_strategy.value = "captions"
-    config.ffmpeg_location = ""
     return config
 
 
@@ -125,31 +123,6 @@ class TestSingleVideoInline:
 
         assert result["source"] == "manual_captions"
         assert result["caption_language"] == "en"
-
-    @patch("yt_transcribe.worker._apply_overrides")
-    def test_single_video_reports_assemblyai_source(
-        self, mock_overrides: MagicMock,
-    ):
-        """Cloud transcripts report assemblyai source with no caption language."""
-        from yt_transcribe.worker import _handle_get_transcript
-
-        video = _make_video_info()
-        mock_overrides.return_value = _make_config()
-        video_data = _make_video_data(video)
-        transcript = _make_transcript(
-            source=TranscriptSource.ASSEMBLYAI, caption_language=None,
-        )
-        saved_path = Path("/vault/Transcripts/Long Video [long123].md")
-
-        with (
-            patch("yt_transcribe.download.extract_video_data", return_value=video_data),
-            patch("yt_transcribe.transcribe.transcribe_video_fast", return_value=transcript),
-            patch("yt_transcribe.storage.save_transcript", return_value=saved_path),
-        ):
-            result = _handle_get_transcript({"video_url": video.url})
-
-        assert result["source"] == "assemblyai"
-        assert result["caption_language"] is None
 
     @patch("yt_transcribe.worker._apply_overrides")
     def test_single_video_returns_word_count(

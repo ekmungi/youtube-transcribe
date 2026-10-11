@@ -60,8 +60,6 @@ def _format_started_message(event: dict[str, Any]) -> str:
     """
     label = _STAGE_LABELS.get(event.get("stage", "?"), event.get("stage", "?"))
     extra = ""
-    if "strategy" in event:
-        extra = f" ({event['strategy']})"
     if "index" in event and "total" in event:
         extra = f" [{event['index']}/{event['total']}]"
     if "title" in event:
@@ -207,7 +205,7 @@ async def _inactivity_watchdog(
 async def run_worker(request: dict[str, Any]) -> dict[str, Any]:
     """Spawn a subprocess worker for memory-heavy transcription.
 
-    The worker imports heavy dependencies (yt-dlp, assemblyai, etc.),
+    The worker imports the heavy yt-dlp dependency,
     does the work, writes JSON to stdout, then exits -- freeing all memory.
     Progress events are streamed via stderr in real time.
 

@@ -67,7 +67,7 @@ class TestInactivityTimeout:
         stderr_lines = [
             'PROGRESS:{"stage":"downloading","status":"started"}\n',
             'PROGRESS:{"stage":"downloading","status":"done","elapsed":1.2}\n',
-            'PROGRESS:{"stage":"transcribing","status":"started","strategy":"captions"}\n',
+            'PROGRESS:{"stage":"transcribing","status":"started"}\n',
             'PROGRESS:{"stage":"saving","status":"started"}\n',
             'PROGRESS:{"stage":"transcribing","status":"done","elapsed":5.0}\n',
         ]

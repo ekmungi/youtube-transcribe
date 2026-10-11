@@ -1,7 +1,7 @@
 """Subprocess worker for memory-heavy transcription tasks.
 
-Runs in a separate process so that heavy dependencies (assemblyai,
-yt-dlp) are loaded only here and fully freed when the worker exits.
+Runs in a separate process so that the heavy yt-dlp dependency is loaded
+only here and fully freed when the worker exits.
 The MCP server stays lean (~60 MB idle).
 
 Protocol:
@@ -32,21 +32,17 @@ def _progress(stage: str, status: str = "started", **extra: Any) -> None:
     Args:
         stage: Current stage name (downloading, transcribing, saving).
         status: Stage status (started, done).
-        **extra: Additional fields (elapsed, strategy, title, etc.).
+        **extra: Additional fields (elapsed, title, etc.).
     """
     event = {"stage": stage, "status": status, **extra}
     sys.stderr.write(f"{_PROGRESS_PREFIX}{json.dumps(event)}\n")
     sys.stderr.flush()
 
 
-def _apply_overrides(
-    strategy: str | None = None,
-    output_dir: str | None = None,
-) -> Any:
+def _apply_overrides(output_dir: str | None = None) -> Any:
     """Load config and apply optional per-call overrides.
 
     Args:
-        strategy: Override transcription strategy (captions, cloud).
         output_dir: Absolute directory to write the transcript into. When
             given, it becomes the vault root with an empty subfolder so files
             land directly in output_dir; when None, the configured location
@@ -56,11 +52,8 @@ def _apply_overrides(
         Config with the overrides applied.
     """
     from yt_transcribe.config import load_config
-    from yt_transcribe.models import TranscriptionStrategy
 
     config = load_config()
-    if strategy:
-        config = replace(config, transcription_strategy=TranscriptionStrategy(strategy))
     if output_dir:
         config = replace(
             config, obsidian_vault_path=output_dir, transcript_folder="",
@@ -89,8 +82,7 @@ def _handle_get_transcript(request: dict[str, Any]) -> dict[str, Any]:
     Always transcribes inline regardless of video duration.
 
     Args:
-        request: Dict with video_url and optional strategy/include_text/
-            output_dir keys.
+        request: Dict with video_url and optional include_text/output_dir keys.
 
     Returns:
         Dict with path, word count, and source metadata (text if requested).
@@ -99,9 +91,9 @@ def _handle_get_transcript(request: dict[str, Any]) -> dict[str, Any]:
     from yt_transcribe.download import extract_video_data
 
     video_url = request["video_url"]
-    config = _apply_overrides(request.get("strategy"), request.get("output_dir"))
+    config = _apply_overrides(request.get("output_dir"))
 
-    # Stage 1: Download metadata + captions + audio URL
+    # Stage 1: Download metadata + captions
     _progress("downloading", "started")
     t0 = time.monotonic()
     video_data = extract_video_data(video_url)
@@ -110,10 +102,9 @@ def _handle_get_transcript(request: dict[str, Any]) -> dict[str, Any]:
     _progress("downloading", "done", elapsed=dl_elapsed, title=video.title)
 
     # Stage 2: Transcribe (always inline)
-    strategy = str(config.transcription_strategy.value)
-    _progress("transcribing", "started", strategy=strategy)
+    _progress("transcribing", "started")
     t1 = time.monotonic()
-    transcript_result = transcribe.transcribe_video_fast(video_data, config)
+    transcript_result = transcribe.transcribe_video_fast(video_data)
     tx_elapsed = round(time.monotonic() - t1, 1)
     _progress("transcribing", "done", elapsed=tx_elapsed)
 
@@ -146,8 +137,7 @@ def _handle_get_playlist_transcripts(request: dict[str, Any]) -> dict[str, Any]:
     re-running the same playlist retries only the failed ones.
 
     Args:
-        request: Dict with playlist_url and optional strategy/include_text/
-            output_dir keys.
+        request: Dict with playlist_url and optional include_text/output_dir keys.
 
     Returns:
         Dict with 'transcripts' (per-video path and source metadata) and
@@ -160,7 +150,7 @@ def _handle_get_playlist_transcripts(request: dict[str, Any]) -> dict[str, Any]:
     from yt_transcribe.models import TranscriptSource
 
     playlist_url = request["playlist_url"]
-    config = _apply_overrides(request.get("strategy"), request.get("output_dir"))
+    config = _apply_overrides(request.get("output_dir"))
 
     _progress("playlist_fetch", "started")
     t0 = time.monotonic()
@@ -198,7 +188,7 @@ def _handle_get_playlist_transcripts(request: dict[str, Any]) -> dict[str, Any]:
         tv0 = time.monotonic()
         try:
             video_data = extract_video_data(video.url)
-            transcript_result = transcribe.transcribe_video_fast(video_data, config)
+            transcript_result = transcribe.transcribe_video_fast(video_data)
             saved_path = storage.save_transcript(config, transcript_result)
         except YtTranscribeError as exc:
             # One bad video (no captions, rate limit, private) must not discard

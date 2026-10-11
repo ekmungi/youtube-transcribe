@@ -1,23 +1,17 @@
 """Tests for YouTube download module. All yt-dlp calls are mocked."""
 
 import json
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from yt_transcribe.download import (
     VideoData,
-    _extract_audio_url,
-    _find_ffmpeg,
-    download_audio,
-    ensure_ffmpeg,
     extract_video_data,
     get_playlist_info,
 )
 from yt_transcribe.exceptions import (
     CaptionFetchError,
-    DownloadError,
     PlaylistNotFoundError,
     VideoNotFoundError,
     VideoUnavailableError,
@@ -119,55 +113,12 @@ class TestGetPlaylistInfo:
             get_playlist_info("https://www.youtube.com/playlist?list=bad")
 
 
-# -- download_audio tests --
-
-class TestDownloadAudio:
-    @patch("yt_transcribe.download.yt_dlp.YoutubeDL")
-    def test_returns_path_to_audio_file(self, mock_ydl_cls: MagicMock, tmp_path: Path):
-        """download_audio returns a Path to the downloaded audio."""
-        mock_ydl = _make_ydl(mock_ydl_cls, {**SAMPLE_INFO_DICT})
-
-        # Simulate yt-dlp writing a file
-        audio_file = tmp_path / "audio.m4a"
-        audio_file.write_bytes(b"fake audio data")
-        mock_ydl.prepare_filename.return_value = str(audio_file)
-
-        result = download_audio("https://www.youtube.com/watch?v=abc123", tmp_path)
-
-        assert isinstance(result, Path)
-
-    @patch("yt_transcribe.download.yt_dlp.YoutubeDL")
-    def test_raises_download_error_on_failure(self, mock_ydl_cls: MagicMock, tmp_path: Path):
-        """download_audio raises DownloadError on network failure."""
-        mock_ydl = _make_ydl(mock_ydl_cls, SAMPLE_INFO_DICT)
-        mock_ydl.extract_info.side_effect = Exception("Network error")
-
-        with pytest.raises(DownloadError):
-            download_audio("https://www.youtube.com/watch?v=abc123", tmp_path)
-
-
 # -- extract_video_data tests (single-call optimization) --
 
 # Mirrors the real yt-dlp info dict: subtitle entries have ext/url/name, NEVER data
 SAMPLE_INFO_WITH_SUBS = {
     **SAMPLE_INFO_DICT,
     "language": "en",
-    "formats": [
-        {
-            "format_id": "251",
-            "acodec": "opus",
-            "vcodec": "none",
-            "abr": 128,
-            "url": "https://audio.example.com/251",
-        },
-        {
-            "format_id": "140",
-            "acodec": "mp4a",
-            "vcodec": "none",
-            "abr": 96,
-            "url": "https://audio.example.com/140",
-        },
-    ],
     "subtitles": {
         "en": [
             {
@@ -209,7 +160,7 @@ class TestExtractVideoData:
 
     @patch("yt_transcribe.download.yt_dlp.YoutubeDL")
     def test_returns_video_data_with_all_fields(self, mock_ydl_cls: MagicMock):
-        """extract_video_data returns VideoData with metadata, captions, and audio URL."""
+        """extract_video_data returns VideoData with metadata and captions only."""
         _make_ydl(mock_ydl_cls, SAMPLE_INFO_WITH_SUBS, body=SAMPLE_JSON3_BODY)
 
         result = extract_video_data("https://www.youtube.com/watch?v=abc123")
@@ -218,7 +169,7 @@ class TestExtractVideoData:
         assert result.video_info.video_id == "abc123"
         assert result.captions is not None
         assert len(result.captions) == 2
-        assert result.audio_url == "https://audio.example.com/251"  # highest abr
+        assert not hasattr(result, "audio_url")  # audio is never downloaded
 
     @patch("yt_transcribe.download.yt_dlp.YoutubeDL")
     def test_reports_caption_provenance(self, mock_ydl_cls: MagicMock):
@@ -237,7 +188,6 @@ class TestExtractVideoData:
             **SAMPLE_INFO_DICT,
             "subtitles": {},
             "automatic_captions": {},
-            "formats": [],
         }
         _make_ydl(mock_ydl_cls, info_no_subs)
 
@@ -255,7 +205,7 @@ class TestExtractVideoData:
         self, mock_ydl_cls: MagicMock, mock_fetch: MagicMock,
     ):
         """A caption fetch failure is recorded on VideoData instead of raising:
-        metadata and audio URL remain usable (e.g. for the cloud strategy)."""
+        the metadata remains usable and transcription reports a retryable error."""
         _make_ydl(mock_ydl_cls, SAMPLE_INFO_WITH_SUBS)
         mock_fetch.side_effect = CaptionFetchError("rate limited")
 
@@ -291,77 +241,3 @@ class TestExtractVideoData:
         extract_video_data("https://www.youtube.com/watch?v=abc123")
 
         mock_ydl.extract_info.assert_called_once()
-
-
-class TestExtractAudioUrl:
-    """Tests for _extract_audio_url helper."""
-
-    def test_picks_highest_bitrate_audio(self):
-        """Selects audio format with highest abr."""
-        info = {
-            "formats": [
-                {"acodec": "opus", "vcodec": "none", "abr": 64, "url": "https://low.com"},
-                {"acodec": "opus", "vcodec": "none", "abr": 128, "url": "https://high.com"},
-            ]
-        }
-        assert _extract_audio_url(info) == "https://high.com"
-
-    def test_returns_none_for_no_formats(self):
-        """Returns None when no formats available."""
-        assert _extract_audio_url({"formats": []}) is None
-
-    def test_fallback_to_format_with_video(self):
-        """Falls back to video+audio format when no audio-only available."""
-        info = {
-            "formats": [
-                {"acodec": "mp4a", "vcodec": "h264", "abr": 128, "url": "https://mixed.com"},
-            ]
-        }
-        assert _extract_audio_url(info) == "https://mixed.com"
-
-
-class TestFindFfmpeg:
-    """Tests for ffmpeg resolution (_find_ffmpeg) and the ensure_ffmpeg guard."""
-
-    def test_explicit_existing_path_wins(self, tmp_path: Path):
-        """A configured path that exists is returned verbatim."""
-        binary = tmp_path / "ffmpeg.exe"
-        binary.write_text("x")
-        assert _find_ffmpeg(str(binary)) == str(binary)
-
-    def test_empty_string_when_on_path(self):
-        """Returns empty string (let yt-dlp find it) when ffmpeg is on PATH."""
-        with patch("yt_transcribe.download.shutil.which", return_value="/usr/bin/ffmpeg"):
-            assert _find_ffmpeg("") == ""
-
-    def test_bundled_fallback_when_extra_installed(self):
-        """Falls back to the imageio-ffmpeg static binary when present."""
-        with (
-            patch("yt_transcribe.download.shutil.which", return_value=None),
-            patch("pathlib.Path.exists", return_value=False),
-            patch(
-                "yt_transcribe.download._imageio_ffmpeg_path",
-                return_value="/bundled/ffmpeg",
-            ),
-        ):
-            assert _find_ffmpeg("") == "/bundled/ffmpeg"
-
-    def test_returns_none_when_nothing_found(self):
-        """Returns None when ffmpeg cannot be located anywhere."""
-        with (
-            patch("yt_transcribe.download.shutil.which", return_value=None),
-            patch("pathlib.Path.exists", return_value=False),
-            patch("yt_transcribe.download._imageio_ffmpeg_path", return_value=None),
-        ):
-            assert _find_ffmpeg("") is None
-
-    def test_ensure_ffmpeg_raises_actionable_error_when_missing(self):
-        """ensure_ffmpeg raises DownloadError naming the install options."""
-        with patch("yt_transcribe.download._find_ffmpeg", return_value=None):
-            with pytest.raises(DownloadError, match="ffmpeg is required"):
-                ensure_ffmpeg("")
-
-    def test_ensure_ffmpeg_passes_when_available(self):
-        """ensure_ffmpeg is a no-op when ffmpeg resolves."""
-        with patch("yt_transcribe.download._find_ffmpeg", return_value=""):
-            ensure_ffmpeg("")  # must not raise

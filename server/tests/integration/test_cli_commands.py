@@ -12,7 +12,6 @@ from yt_transcribe.models import (
     Config,
     Segment,
     Transcript,
-    TranscriptionStrategy,
     TranscriptSource,
     VideoInfo,
 )
@@ -31,7 +30,7 @@ def sample_config(tmp_path: Path) -> Config:
     return Config(
         obsidian_vault_path=str(tmp_path / "vault"),
         transcript_folder="Transcripts",
-        transcription_strategy=TranscriptionStrategy.CAPTIONS,    )
+    )
 
 
 @pytest.fixture()
@@ -75,7 +74,6 @@ class TestVideoCommand:
         video_data = VideoData(
             video_info=sample_video,
             captions=None,
-            audio_url="https://audio.example.com/abc123",
             raw_info={"id": "abc123abcde"},
         )
 
@@ -106,7 +104,6 @@ class TestVideoCommand:
         video_data = VideoData(
             video_info=sample_video,
             captions=None,
-            audio_url="https://audio.example.com/abc123",
             raw_info={"id": "abc123abcde"},
         )
 
@@ -147,7 +144,7 @@ class TestVideoJsonOutput:
 
         video_data = VideoData(
             video_info=sample_video, captions=None,
-            audio_url=None, raw_info={"id": "abc123abcde"},
+            raw_info={"id": "abc123abcde"},
         )
         with (
             patch("yt_transcribe.cli.load_config", return_value=sample_config),
@@ -188,7 +185,7 @@ class TestVideoJsonOutput:
 
         video_data = VideoData(
             video_info=sample_video, captions=None,
-            audio_url=None, raw_info={"id": "abc123abcde"},
+            raw_info={"id": "abc123abcde"},
         )
         stored = MagicMock(title="Test Video", source="auto_captions", caption_language="en")
         with (
@@ -225,7 +222,7 @@ class TestVideoJsonOutput:
 
         video_data = VideoData(
             video_info=sample_video, captions=None,
-            audio_url=None, raw_info={"id": "abc123abcde"},
+            raw_info={"id": "abc123abcde"},
         )
         with (
             patch("yt_transcribe.cli.load_config", return_value=sample_config),
@@ -245,47 +242,6 @@ class TestVideoJsonOutput:
         assert payload["error_type"] == "NoCaptionsError"
         assert "no captions here" in payload["error"]
 
-    def test_strategy_override_passed_to_transcription(
-        self, runner: CliRunner, sample_config: Config,
-        sample_video: VideoInfo, sample_transcript: Transcript,
-    ) -> None:
-        """--strategy cloud overrides the configured strategy for this run."""
-        from yt_transcribe.cli import cli
-        from yt_transcribe.download import VideoData
-        from yt_transcribe.models import TranscriptionStrategy
-
-        video_data = VideoData(
-            video_info=sample_video, captions=None,
-            audio_url=None, raw_info={"id": "abc123abcde"},
-        )
-        captured: dict[str, Config] = {}
-
-        def _capture(vd: VideoData, cfg: Config) -> Transcript:
-            captured["cfg"] = cfg
-            return sample_transcript
-
-        with (
-            patch("yt_transcribe.cli.load_config", return_value=sample_config),
-            patch("yt_transcribe.cli.extract_video_data", return_value=video_data),
-            patch("yt_transcribe.cli.storage.find_existing", return_value=None),
-            patch(
-                "yt_transcribe.cli.transcribe.transcribe_video_fast",
-                side_effect=_capture,
-            ),
-            patch(
-                "yt_transcribe.cli.storage.save_transcript",
-                return_value=Path("/vault/x.md"),
-            ),
-        ):
-            result = runner.invoke(
-                cli,
-                ["video", "https://youtube.com/watch?v=abc123abcde",
-                 "--strategy", "cloud", "--json"],
-            )
-
-        assert result.exit_code == 0
-        assert captured["cfg"].transcription_strategy == TranscriptionStrategy.CLOUD
-
     def test_vault_and_folder_overrides_passed_to_storage(
         self, runner: CliRunner, sample_config: Config,
         sample_video: VideoInfo, sample_transcript: Transcript,
@@ -296,7 +252,7 @@ class TestVideoJsonOutput:
 
         video_data = VideoData(
             video_info=sample_video, captions=None,
-            audio_url=None, raw_info={"id": "abc123abcde"},
+            raw_info={"id": "abc123abcde"},
         )
         captured: dict[str, Config] = {}
 
@@ -342,7 +298,7 @@ class TestVideoNoSave:
 
         video_data = VideoData(
             video_info=sample_video, captions=None,
-            audio_url=None, raw_info={"id": "abc123abcde"},
+            raw_info={"id": "abc123abcde"},
         )
         with (
             patch("yt_transcribe.cli.load_config", return_value=sample_config),
@@ -381,7 +337,7 @@ class TestVideoNoSave:
 
         video_data = VideoData(
             video_info=sample_video, captions=None,
-            audio_url=None, raw_info={"id": "abc123abcde"},
+            raw_info={"id": "abc123abcde"},
         )
         with (
             patch("yt_transcribe.cli.load_config", return_value=sample_config),
@@ -401,45 +357,6 @@ class TestVideoNoSave:
         assert "no captions here" in payload["error"]
 
 
-class TestSetupFfmpegCommand:
-    """Tests for `yt-transcribe setup-ffmpeg`."""
-
-    def test_json_success_reports_path(self, runner: CliRunner) -> None:
-        """--json emits the installed path and configured flag."""
-        import json
-
-        from yt_transcribe.cli import cli
-
-        with patch(
-            "yt_transcribe.ffmpeg_setup.setup_ffmpeg",
-            return_value=Path("/home/u/.yt-transcribe/bin"),
-        ):
-            result = runner.invoke(cli, ["setup-ffmpeg", "--json"])
-
-        assert result.exit_code == 0
-        payload = json.loads(result.output.strip())
-        assert payload["configured"] is True
-        assert payload["path"].endswith("bin")
-
-    def test_json_error_reports_error_type(self, runner: CliRunner) -> None:
-        """A download failure is reported as JSON with exit code 1."""
-        import json
-
-        from yt_transcribe.cli import cli
-        from yt_transcribe.exceptions import DownloadError
-
-        with patch(
-            "yt_transcribe.ffmpeg_setup.setup_ffmpeg",
-            side_effect=DownloadError("network down"),
-        ):
-            result = runner.invoke(cli, ["setup-ffmpeg", "--json"])
-
-        assert result.exit_code == 1
-        payload = json.loads(result.output.strip())
-        assert payload["error_type"] == "DownloadError"
-        assert "network down" in payload["error"]
-
-
 # -- playlist command --------------------------------------------------------
 
 class TestPlaylistCommand:
@@ -456,7 +373,6 @@ class TestPlaylistCommand:
         video_data = VideoData(
             video_info=sample_video,
             captions=None,
-            audio_url="https://audio.example.com/abc123",
             raw_info={"id": "abc123abcde"},
         )
 
@@ -498,7 +414,7 @@ class TestPlaylistJsonOutput:
 
         video_data = VideoData(
             video_info=sample_video, captions=None,
-            audio_url=None, raw_info={"id": "abc123abcde"},
+            raw_info={"id": "abc123abcde"},
         )
         with (
             patch("yt_transcribe.cli.load_config", return_value=sample_config),
@@ -544,7 +460,7 @@ class TestPlaylistJsonOutput:
 
         video_data = VideoData(
             video_info=sample_video, captions=None,
-            audio_url=None, raw_info={"id": "abc123abcde"},
+            raw_info={"id": "abc123abcde"},
         )
         captured: dict[str, Config] = {}
 
@@ -693,7 +609,7 @@ class TestRepeatRequestSkipsYoutube:
 
         video_data = VideoData(
             video_info=sample_video, captions=None,
-            audio_url=None, raw_info={"id": "abc123abcde"},
+            raw_info={"id": "abc123abcde"},
         )
         with (
             patch("yt_transcribe.cli.load_config", return_value=sample_config),
@@ -729,7 +645,7 @@ class TestRepeatRequestSkipsYoutube:
 
         video_data = VideoData(
             video_info=sample_video, captions=None,
-            audio_url=None, raw_info={"id": "abc123abcde"},
+            raw_info={"id": "abc123abcde"},
         )
         with (
             patch("yt_transcribe.cli.load_config", return_value=sample_config),
@@ -808,7 +724,7 @@ class TestPlaylistPartialFailure:
         videos = self._three_videos(sample_video)
         video_data = VideoData(
             video_info=sample_video, captions=None,
-            audio_url=None, raw_info={"id": "abc123abcde"},
+            raw_info={"id": "abc123abcde"},
         )
         with (
             patch("yt_transcribe.cli.load_config", return_value=sample_config),
@@ -851,7 +767,7 @@ class TestPlaylistPartialFailure:
 
         video_data = VideoData(
             video_info=sample_video, captions=None,
-            audio_url=None, raw_info={"id": "abc123abcde"},
+            raw_info={"id": "abc123abcde"},
         )
         with (
             patch("yt_transcribe.cli.load_config", return_value=sample_config),
@@ -888,7 +804,7 @@ class TestPlaylistPartialFailure:
         videos = self._three_videos(sample_video)
         video_data = VideoData(
             video_info=sample_video, captions=None,
-            audio_url=None, raw_info={"id": "abc123abcde"},
+            raw_info={"id": "abc123abcde"},
         )
         with (
             patch("yt_transcribe.cli.load_config", return_value=sample_config),
@@ -922,7 +838,7 @@ class TestPlaylistPartialFailure:
 
         video_data = VideoData(
             video_info=sample_video, captions=None,
-            audio_url=None, raw_info={"id": "abc123abcde"},
+            raw_info={"id": "abc123abcde"},
         )
         with (
             patch("yt_transcribe.cli.load_config", return_value=sample_config),
@@ -1018,6 +934,71 @@ class TestSearchCommand:
         assert "no" in result.output.lower() or "0" in result.output
 
 
+# -- retired --strategy option --------------------------------------------
+
+class TestRetiredStrategyOption:
+    """--strategy was removed with the cloud strategy but is still accepted as 'captions'.
+
+    Plugin versions before 0.5.0 always pass `--strategy captions`, so rejecting the
+    option outright would break them until BRAT updates the plugin.
+    """
+
+    def test_captions_is_accepted_and_changes_nothing(
+        self, runner: CliRunner, sample_config: Config, sample_video: VideoInfo,
+    ) -> None:
+        import json
+        from unittest.mock import MagicMock
+
+        from yt_transcribe.cli import cli
+
+        stored = MagicMock(title="Stored Title", source="auto_captions", caption_language="en")
+        with (
+            patch("yt_transcribe.cli.load_config", return_value=sample_config),
+            patch(
+                "yt_transcribe.cli.storage.find_existing",
+                return_value=Path("/vault/cached.md"),
+            ),
+            patch("yt_transcribe.cli.storage.read_stored_transcript", return_value=stored),
+        ):
+            result = runner.invoke(
+                cli,
+                ["video", "https://youtube.com/watch?v=abc123abcde",
+                 "--strategy", "captions", "--json"],
+            )
+
+        assert result.exit_code == 0
+        assert json.loads(result.output.strip())["cached"] is True
+
+    @pytest.mark.parametrize("command", ["video", "playlist"])
+    def test_cloud_is_refused_with_a_clear_message(
+        self, runner: CliRunner, command: str,
+    ) -> None:
+        from yt_transcribe.cli import cli
+
+        result = runner.invoke(
+            cli,
+            [command, "https://youtube.com/watch?v=abc123abcde", "--strategy", "cloud"],
+        )
+
+        assert result.exit_code != 0
+        assert "removed" in result.output
+        assert "captions are the only source" in result.output
+
+    def test_the_option_is_hidden_from_help(self, runner: CliRunner) -> None:
+        from yt_transcribe.cli import cli
+
+        for command in ("video", "playlist"):
+            result = runner.invoke(cli, [command, "--help"])
+            assert "--strategy" not in result.output
+
+    def test_setup_ffmpeg_command_is_gone(self, runner: CliRunner) -> None:
+        from yt_transcribe.cli import cli
+
+        result = runner.invoke(cli, ["setup-ffmpeg"])
+        assert result.exit_code != 0
+        assert "No such command" in result.output
+
+
 # -- config command ----------------------------------------------------------
 
 class TestConfigCommand:
@@ -1031,7 +1012,9 @@ class TestConfigCommand:
             result = runner.invoke(cli, ["config"])
 
         assert result.exit_code == 0
-        assert "captions" in result.output.lower()
+        assert "obsidian_vault_path" in result.output
+        assert "transcript_folder" in result.output
+        assert "strategy" not in result.output.lower()
 
     def test_config_set_updates_value(self, runner: CliRunner, sample_config: Config) -> None:
         """Config set writes new value."""
@@ -1041,10 +1024,11 @@ class TestConfigCommand:
             patch("yt_transcribe.cli.load_config", return_value=sample_config),
             patch("yt_transcribe.cli.config_mod.save_config") as mock_save,
         ):
-            result = runner.invoke(cli, ["config", "set", "transcription_strategy", "cloud"])
+            result = runner.invoke(cli, ["config", "set", "transcript_folder", "Media/YT"])
 
         assert result.exit_code == 0
         mock_save.assert_called_once()
+        assert mock_save.call_args.args[0].transcript_folder == "Media/YT"
 
     def test_config_set_invalid_key(self, runner: CliRunner, sample_config: Config) -> None:
         """Unknown config key shows error."""
@@ -1055,14 +1039,14 @@ class TestConfigCommand:
 
         assert result.exit_code != 0 or "unknown" in result.output.lower()
 
-    def test_config_set_rejects_legacy_strategy(
+    def test_config_set_rejects_the_removed_strategy_key(
         self, runner: CliRunner, sample_config: Config,
     ) -> None:
-        """Legacy strategy names (auto, local) are no longer accepted."""
+        """transcription_strategy went away with the cloud strategy."""
         from yt_transcribe.cli import cli
 
         with patch("yt_transcribe.cli.load_config", return_value=sample_config):
-            result = runner.invoke(cli, ["config", "set", "transcription_strategy", "local"])
+            result = runner.invoke(cli, ["config", "set", "transcription_strategy", "captions"])
 
         assert result.exit_code != 0
-        assert "invalid" in result.output.lower()
+        assert "unknown config key" in result.output.lower()

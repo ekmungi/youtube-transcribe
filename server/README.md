@@ -1,14 +1,14 @@
 # YT Transcribe
 
-Captions-first YouTube transcript extractor. Fetches YouTube's existing caption tracks (manual or auto-generated) in seconds and saves them as Markdown with YAML frontmatter to an Obsidian vault. Exposed through an MCP server (for Claude Code and other MCP clients) and a CLI.
+YouTube transcript extractor. Fetches YouTube's own caption tracks (manual or auto-generated) in seconds and saves them as Markdown with YAML frontmatter to an Obsidian vault. Used through a CLI (by Claude Code through a skill, and by the Obsidian plugin) and an optional MCP server.
 
 ## How it works
 
-YouTube already has a transcript for nearly every video: a manual caption track uploaded by the creator, or an auto-generated one. The default `captions` strategy fetches that track directly -- no audio download, no speech-to-text, no cost, typically a few seconds per video.
+YouTube already has a transcript for nearly every video: a manual caption track uploaded by the creator, or an auto-generated one. The tool fetches that track directly -- no audio download, no speech-to-text, no cost, typically a few seconds per video.
 
-For the rare video with no captions at all, the `cloud` strategy downloads the audio and sends it to AssemblyAI for paid speech-to-text. This is an explicit opt-in: it requires an AssemblyAI API key and it sends the video's audio to a third-party service. It is never used unless you ask for it.
+The text always comes from YouTube's captions and there is no other source, so a video without captions cannot be transcribed. The command then reports a clear error (`NoCaptionsError`) and nothing else is tried.
 
-Every saved transcript records its provenance in the frontmatter: `source` (`manual_captions`, `auto_captions`, or `assemblyai`) and `caption_language` (null for speech-to-text results).
+Every saved transcript records its provenance in the frontmatter: `source` (`manual_captions` or `auto_captions`) and `caption_language`.
 
 ### Foreign-language videos
 
@@ -16,8 +16,7 @@ For videos in other languages, you get the transcript in the video's original la
 
 ## Features
 
-- **Captions-first**: YouTube's own caption tracks by default -- free, fast, nothing leaves YouTube
-- **Cloud fallback (opt-in)**: AssemblyAI speech-to-text for caption-less videos
+- **Captions only**: YouTube's own caption tracks -- free, fast, nothing leaves YouTube
 - **Obsidian vault output**: Markdown with YAML frontmatter (title, channel, url, video_id, date, duration, source, caption_language, tags)
 - **Playlist support**: Expand and transcribe entire YouTube playlists; a video that fails is listed under `failed` and the rest continue
 - **Deduplication**: Skips videos already saved in the vault, so re-running a playlist retries only the failed videos
@@ -29,8 +28,6 @@ For videos in other languages, you get the transcript in the video's original la
 
 - Python 3.12+
 - [uv](https://docs.astral.sh/uv/) package manager
-- AssemblyAI API key (only for the optional `cloud` strategy)
-- ffmpeg (only for the optional `cloud` strategy; auto-detected or configurable path)
 
 ## Installation
 
@@ -94,7 +91,7 @@ The MCP server exposes 6 tools via stdio transport for use with Claude Desktop o
 | `search_transcripts` | Full-text search across transcript content |
 | `server_status` | Check server health, uptime, config, and activity |
 
-The transcription tools accept an optional `strategy` argument (`captions` or `cloud`), an `include_text` flag to return the transcript text inline instead of just the saved file path, and an `output_dir` to write somewhere other than the configured vault. Responses always include `source` and `caption_language` provenance.
+The transcription tools accept an `include_text` flag to return the transcript text inline instead of just the saved file path, and an `output_dir` to write somewhere other than the configured vault. Responses always include `source` and `caption_language` provenance.
 
 After upgrading the engine, restart the MCP client (for Claude Code, start a new session): the server is a long-running process and keeps running the code it started with. `server_status` reports the running version.
 
@@ -117,10 +114,8 @@ uv run yt-transcribe search "query"
 uv run yt-transcribe config
 
 # Update a configuration value
-uv run yt-transcribe config set transcription_strategy captions
+uv run yt-transcribe config set transcript_folder "03 RESOURCES/Youtube Transcriptions"
 ```
-
-The CLI uses the strategy from your config file; switch with `config set transcription_strategy cloud` if you need speech-to-text for a caption-less video, and switch back afterwards.
 
 ## Configuration
 
@@ -130,10 +125,8 @@ Settings are stored in `~/.yt-transcribe/config.yaml` (auto-created on first use
 |---------|---------|-------------|
 | `obsidian_vault_path` | `~/Obsidian` | Path to Obsidian vault |
 | `transcript_folder` | `Sources/YouTube Transcripts` | Subfolder within the vault |
-| `transcription_strategy` | `captions` | `captions` (default) or `cloud` (AssemblyAI opt-in) |
-| `ffmpeg_location` | (auto-detect) | Path to ffmpeg binary (only used by `cloud`) |
 
-The AssemblyAI API key is read from the `ASSEMBLYAI_API_KEY` environment variable or the OS keyring (service `yt-transcribe`). Legacy strategy values from older versions (`auto`, `local`) migrate to `captions` automatically.
+Keys written by older versions (the transcription strategy and the ffmpeg location) are ignored and dropped the next time the config is saved.
 
 ## Obsidian plugin
 
@@ -151,13 +144,12 @@ update with `uv tool upgrade yt-transcribe`.
 
 ```
 src/yt_transcribe/       # Core library
-  config.py              # YAML config + keyring for API keys
+  config.py              # YAML config (vault path and folder)
   models.py              # Immutable dataclasses (frozen=True)
   exceptions.py          # Typed error hierarchy
   captions.py            # YouTube caption track fetching and parsing
-  download.py            # yt-dlp: metadata, captions, audio download
-  transcribe.py          # Strategy orchestration (captions / cloud)
-  assemblyai_engine.py   # Cloud speech-to-text engine (opt-in)
+  download.py            # yt-dlp: metadata and captions in one call
+  transcribe.py          # Transcript built from the caption track
   storage.py             # Markdown output with frontmatter
   search.py              # Full-text search across vault
   failures.py            # Shared record for a failed playlist video
@@ -169,6 +161,13 @@ src/yt_transcribe/       # Core library
 ```
 
 ## Changelog
+
+### 0.13.0
+
+- **The cloud (AssemblyAI) strategy is removed.** Captions are the only source of text. Gone with it: the `assemblyai` provenance value, the `setup-ffmpeg` command, the `[cloud]` extra, the AssemblyAI key lookup (environment variable and OS keyring), the `strategy` argument of the MCP tools, the `transcription_strategy` and `ffmpeg_location` settings, and the `assemblyai`, `keyring` and `imageio-ffmpeg` dependencies (eleven fewer packages in all). A video without captions fails with `NoCaptionsError` and nothing else is tried.
+- `--strategy` is still accepted as `captions`, hidden from the help, so plugin versions before 0.5.0 keep working. `--strategy cloud` is refused with a message saying the strategy was removed.
+- Old config files load unchanged: the obsolete keys are ignored and dropped on the next save. Notes already saved with `source: assemblyai` stay readable.
+- On a machine that used the cloud strategy, two leftovers can be deleted by hand: the downloaded ffmpeg in `~/.yt-transcribe/bin` and any AssemblyAI key stored in the OS credential store under the service name `yt-transcribe`.
 
 ### 0.12.1
 

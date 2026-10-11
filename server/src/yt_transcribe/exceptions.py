@@ -17,16 +17,11 @@ class PlaylistNotFoundError(YtTranscribeError):
     """Playlist URL is invalid or playlist is empty."""
 
 
-class DownloadError(YtTranscribeError):
-    """Network failure during audio download."""
-
-
 class NoCaptionsError(YtTranscribeError):
     """No captions exist for the video.
 
-    Raised by the default captions strategy. The message tells the user
-    they can retry with strategy='cloud' (AssemblyAI, requires an API key)
-    if they want speech-to-text instead.
+    Captions are the only source of text, so a video without a caption track
+    cannot be transcribed.
     """
 
 
@@ -34,10 +29,5 @@ class CaptionFetchError(YtTranscribeError):
     """Caption tracks exist but none could be fetched.
 
     Transient condition (YouTube rate limiting or network failure), distinct
-    from NoCaptionsError: the right advice is to retry in a few minutes,
-    never to pay for the cloud strategy.
+    from NoCaptionsError: the right advice is to retry in a few minutes.
     """
-
-
-class TranscriptionError(YtTranscribeError):
-    """AssemblyAI transcription failed."""

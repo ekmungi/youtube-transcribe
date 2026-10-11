@@ -16,7 +16,6 @@ from yt_transcribe.models import (
     Config,
     Segment,
     Transcript,
-    TranscriptionStrategy,
     TranscriptSource,
     VideoInfo,
 )
@@ -29,7 +28,7 @@ def sample_config(tmp_path: Path) -> Config:
     return Config(
         obsidian_vault_path=str(tmp_path / "vault"),
         transcript_folder="Transcripts",
-        transcription_strategy=TranscriptionStrategy.CAPTIONS,    )
+    )
 
 
 @pytest.fixture()
@@ -188,9 +187,7 @@ class TestGetTranscript:
                 return_value=worker_result,
             ) as mock_worker,
         ):
-            result = await handle_get_transcript(
-                "https://youtube.com/watch?v=abc123abcde", strategy="captions"
-            )
+            result = await handle_get_transcript("https://youtube.com/watch?v=abc123abcde")
 
         assert "text" not in result
         assert result["path"] == "/vault/Transcripts/Test Video [abc123abcde].md"
@@ -200,7 +197,6 @@ class TestGetTranscript:
         mock_worker.assert_called_once_with({
             "command": "get_transcript",
             "video_url": "https://youtube.com/watch?v=abc123abcde",
-            "strategy": "captions",
             "include_text": False,
             "output_dir": None,
         })
@@ -231,7 +227,6 @@ class TestGetTranscript:
         ):
             result = await handle_get_transcript(
                 "https://youtube.com/watch?v=abc123abcde",
-                strategy="captions",
                 include_text=True,
             )
 
@@ -240,7 +235,6 @@ class TestGetTranscript:
         mock_worker.assert_called_once_with({
             "command": "get_transcript",
             "video_url": "https://youtube.com/watch?v=abc123abcde",
-            "strategy": "captions",
             "include_text": True,
             "output_dir": None,
         })
@@ -321,7 +315,7 @@ class TestGetPlaylistTranscripts:
             return_value=worker_result,
         ) as mock_worker:
             result = await handle_get_playlist_transcripts(
-                "https://youtube.com/playlist?list=PL123", strategy="captions"
+                "https://youtube.com/playlist?list=PL123"
             )
 
         assert len(result["transcripts"]) == 1
@@ -331,7 +325,6 @@ class TestGetPlaylistTranscripts:
         mock_worker.assert_called_once_with({
             "command": "get_playlist_transcripts",
             "playlist_url": "https://youtube.com/playlist?list=PL123",
-            "strategy": "captions",
             "include_text": False,
             "output_dir": None,
         })

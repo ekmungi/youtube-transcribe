@@ -2,41 +2,34 @@
 
 import pytest
 
+from yt_transcribe import models
 from yt_transcribe.models import (
     Config,
     Segment,
     Transcript,
-    TranscriptionStrategy,
     TranscriptSource,
     VideoInfo,
 )
 
 
-class TestTranscriptionStrategy:
-    def test_values(self):
-        """Only two strategies exist: captions (default) and cloud (opt-in)."""
-        assert TranscriptionStrategy.CAPTIONS == "captions"
-        assert TranscriptionStrategy.CLOUD == "cloud"
+class TestRemovedCloudTypes:
+    def test_no_transcription_strategy(self):
+        """Captions are the only source, so there is nothing to choose between."""
+        assert not hasattr(models, "TranscriptionStrategy")
 
-    def test_exactly_two_members(self):
-        """The local STT tier and the auto cascade were removed in Phase B."""
-        assert len(TranscriptionStrategy) == 2
-
-    def test_legacy_values_rejected(self):
-        """Legacy strategy names are not enum members (migration happens in config)."""
-        with pytest.raises(ValueError):
-            TranscriptionStrategy("auto")
-        with pytest.raises(ValueError):
-            TranscriptionStrategy("local")
+    def test_no_assemblyai_source(self):
+        assert not hasattr(TranscriptSource, "ASSEMBLYAI")
 
 
 class TestTranscriptSource:
     def test_values(self):
-        """Source provenance covers cache, both caption kinds, and AssemblyAI."""
+        """Source provenance covers the cache and both caption kinds."""
         assert TranscriptSource.CACHE == "cache"
         assert TranscriptSource.MANUAL_CAPTIONS == "manual_captions"
         assert TranscriptSource.AUTO_CAPTIONS == "auto_captions"
-        assert TranscriptSource.ASSEMBLYAI == "assemblyai"
+
+    def test_exactly_three_members(self):
+        assert len(TranscriptSource) == 3
 
 
 class TestConfig:
@@ -44,15 +37,19 @@ class TestConfig:
         config = Config(
             obsidian_vault_path="/vault",
             transcript_folder="Transcripts",
-            transcription_strategy=TranscriptionStrategy.CAPTIONS,        )
+        )
         assert config.obsidian_vault_path == "/vault"
-        assert config.transcription_strategy == TranscriptionStrategy.CAPTIONS
+        assert config.transcript_folder == "Transcripts"
+
+    def test_has_only_the_vault_location_fields(self):
+        """The strategy and ffmpeg settings went away with the cloud strategy."""
+        assert set(Config.__dataclass_fields__) == {"obsidian_vault_path", "transcript_folder"}
 
     def test_frozen(self):
         config = Config(
             obsidian_vault_path="/vault",
             transcript_folder="Transcripts",
-            transcription_strategy=TranscriptionStrategy.CAPTIONS,        )
+        )
         with pytest.raises(AttributeError):
             config.obsidian_vault_path = "/other"  # type: ignore[misc]
 
@@ -112,12 +109,12 @@ class TestTranscript:
         assert transcript.caption_language == "en"
 
     def test_caption_language_defaults_to_none(self):
-        """AssemblyAI transcripts have no caption language."""
+        """The language is optional: it is None when the track's language is unknown."""
         transcript = Transcript(
             video=self._video(),
             text="Hi",
             segments=(Segment(0.0, 1.0, "Hi"),),
-            source=TranscriptSource.ASSEMBLYAI,
+            source=TranscriptSource.AUTO_CAPTIONS,
         )
         assert transcript.caption_language is None
 

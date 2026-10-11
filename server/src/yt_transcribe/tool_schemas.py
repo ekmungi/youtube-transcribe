@@ -13,27 +13,15 @@ TOOLS = (
             "Transcribe a YouTube video and save to Obsidian vault. "
             "Returns metadata + file path by default (use Read tool to access text); "
             "responses include source provenance (manual_captions, auto_captions, "
-            "assemblyai, cache) and caption_language. "
+            "cache) and caption_language. "
             "Set include_text=true only when you need inline text. "
-            "Default strategy 'captions' uses YouTube's own caption tracks (free, "
-            "instant, nothing leaves YouTube). 'cloud' downloads the audio and sends "
-            "it to AssemblyAI for paid speech-to-text -- use only when the user "
-            "explicitly opts in (requires an AssemblyAI API key)."
+            "The text comes from YouTube's own caption tracks (free, instant, nothing "
+            "leaves YouTube); a video without captions cannot be transcribed."
         ),
         inputSchema={
             "type": "object",
             "properties": {
                 "video_url": {"type": "string", "description": "YouTube video URL"},
-                "strategy": {
-                    "type": "string",
-                    "description": (
-                        "Transcription strategy. 'captions' (default): YouTube caption "
-                        "tracks, free and instant. 'cloud': sends audio to AssemblyAI "
-                        "(paid, requires API key) -- explicit user opt-in only."
-                    ),
-                    "enum": ["captions", "cloud"],
-                    "default": "captions",
-                },
                 "include_text": {
                     "type": "boolean",
                     "description": (
@@ -64,24 +52,12 @@ TOOLS = (
             "is listed under 'failed' with its error, and re-running the same "
             "playlist retries only those because saved videos are skipped. "
             "Set include_text=true only when you need inline text. "
-            "Default strategy 'captions' uses YouTube's own caption tracks (free, "
-            "instant). 'cloud' sends audio to AssemblyAI for paid speech-to-text -- "
-            "explicit user opt-in only (requires an AssemblyAI API key)."
+            "The text comes from YouTube's own caption tracks (free, instant)."
         ),
         inputSchema={
             "type": "object",
             "properties": {
                 "playlist_url": {"type": "string", "description": "YouTube playlist URL"},
-                "strategy": {
-                    "type": "string",
-                    "description": (
-                        "Transcription strategy. 'captions' (default): YouTube caption "
-                        "tracks, free and instant. 'cloud': sends audio to AssemblyAI "
-                        "(paid, requires API key) -- explicit user opt-in only."
-                    ),
-                    "enum": ["captions", "cloud"],
-                    "default": "captions",
-                },
                 "include_text": {
                     "type": "boolean",
                     "description": (

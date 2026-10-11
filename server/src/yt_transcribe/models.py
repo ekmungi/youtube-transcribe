@@ -6,22 +6,11 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 
-class TranscriptionStrategy(StrEnum):
-    """Available transcription strategies.
-
-    CAPTIONS (default): use YouTube's own caption tracks, no audio upload.
-    CLOUD: explicit opt-in to AssemblyAI speech-to-text (sends audio off-device).
-    """
-    CAPTIONS = "captions"
-    CLOUD = "cloud"
-
-
 class TranscriptSource(StrEnum):
     """Provenance of a transcript: where the text actually came from."""
     CACHE = "cache"
     MANUAL_CAPTIONS = "manual_captions"
     AUTO_CAPTIONS = "auto_captions"
-    ASSEMBLYAI = "assemblyai"
 
 
 @dataclass(frozen=True)
@@ -29,8 +18,6 @@ class Config:
     """Application configuration. Loaded from ~/.yt-transcribe/config.yaml."""
     obsidian_vault_path: str
     transcript_folder: str
-    transcription_strategy: TranscriptionStrategy
-    ffmpeg_location: str = ""
 
 
 @dataclass(frozen=True)
@@ -57,7 +44,7 @@ class Transcript:
     """Complete transcript for a video, with source provenance.
 
     caption_language is the BCP-47-ish language code of the caption track
-    used; None for speech-to-text results (AssemblyAI).
+    used; None when the track's language is not known.
     """
     video: VideoInfo
     text: str

@@ -16,7 +16,7 @@ from yt_transcribe.config import load_config
 from yt_transcribe.download import extract_video_data
 from yt_transcribe.exceptions import YtTranscribeError
 from yt_transcribe.failures import failure_entry
-from yt_transcribe.models import Config, TranscriptionStrategy
+from yt_transcribe.models import Config
 from yt_transcribe.url_classify import extract_video_id
 
 console = Console()
@@ -25,8 +25,35 @@ console = Console()
 _CONFIG_KEYS: dict[str, type] = {
     "obsidian_vault_path": str,
     "transcript_folder": str,
-    "transcription_strategy": str,
 }
+
+
+def _accept_captions_only(
+    ctx: click.Context, param: click.Parameter, value: str | None,
+) -> str | None:
+    """Accept the retired --strategy option, but only with its one remaining value.
+
+    Plugin versions before 0.5.0 always pass ``--strategy captions``, so the
+    option is kept (hidden) to stay compatible with them. The cloud strategy no
+    longer exists, so asking for it is an error that says so.
+
+    Args:
+        ctx: Click context (unused).
+        param: The option being parsed (unused).
+        value: The value given on the command line, or None.
+
+    Returns:
+        The value unchanged when it is None or "captions".
+
+    Raises:
+        click.BadParameter: For any other value, including "cloud".
+    """
+    if value is not None and value != "captions":
+        raise click.BadParameter(
+            f"the '{value}' strategy was removed in 0.13.0; "
+            "captions are the only source of text"
+        )
+    return value
 
 
 @click.group()
@@ -38,8 +65,9 @@ def cli() -> None:
 @cli.command()
 @click.argument("url")
 @click.option(
-    "--strategy", type=click.Choice(["captions", "cloud"]), default=None,
-    help="Override the configured strategy for this run.",
+    "--strategy", default=None, hidden=True, expose_value=False,
+    callback=_accept_captions_only,
+    help="Retired: accepted as 'captions' so older plugins keep working.",
 )
 @click.option(
     "--vault", default=None,
@@ -59,18 +87,17 @@ def cli() -> None:
     "(for backend tooling that stores the transcript itself, e.g. Spyglass).",
 )
 def video(
-    url: str, strategy: str | None, vault: str | None,
-    folder: str | None, as_json: bool, no_save: bool,
+    url: str, vault: str | None, folder: str | None, as_json: bool, no_save: bool,
 ) -> None:
     """Transcribe a single YouTube video."""
     if no_save:
-        _video_nosave_json(url, strategy, vault, folder)
+        _video_nosave_json(url, vault, folder)
         return
     if as_json:
-        _video_json(url, strategy, vault, folder)
+        _video_json(url, vault, folder)
         return
 
-    cfg = _config_with_overrides(strategy, vault, folder)
+    cfg = _config_with_overrides(vault, folder)
 
     # Look the video up by the ID in the URL first: a repeat request is then
     # answered from the vault without any request to YouTube.
@@ -91,13 +118,12 @@ def video(
         return
 
     console.print(f"Transcribing: {video_info.title}...")
-    result = transcribe.transcribe_video_fast(video_data, cfg)
+    result = transcribe.transcribe_video_fast(video_data)
     storage.save_transcript(cfg, result)
     console.print(f"[green]Saved:[/green] {video_info.title}")
 
 
 def _config_with_overrides(
-    strategy: str | None,
     vault: str | None = None,
     folder: str | None = None,
 ) -> Config:
@@ -107,7 +133,6 @@ def _config_with_overrides(
     config is the default for anything left unset.
 
     Args:
-        strategy: 'captions'/'cloud', or None to keep the configured strategy.
         vault: Vault root path override, or None to keep the configured vault.
         folder: Transcript subfolder override, or None to keep the configured one.
 
@@ -115,8 +140,6 @@ def _config_with_overrides(
         A Config with the requested overrides applied.
     """
     cfg = load_config()
-    if strategy is not None:
-        cfg = replace(cfg, transcription_strategy=TranscriptionStrategy(strategy))
     if vault is not None:
         cfg = replace(cfg, obsidian_vault_path=vault)
     if folder is not None:
@@ -156,7 +179,6 @@ def _cached_payload(
 
 def _video_json(
     url: str,
-    strategy: str | None = None,
     vault: str | None = None,
     folder: str | None = None,
 ) -> None:
@@ -169,12 +191,11 @@ def _video_json(
 
     Args:
         url: YouTube video URL to transcribe.
-        strategy: Optional per-run strategy override ('captions' or 'cloud').
         vault: Optional vault root override.
         folder: Optional transcript subfolder override.
     """
     try:
-        cfg = _config_with_overrides(strategy, vault, folder)
+        cfg = _config_with_overrides(vault, folder)
 
         # Look the video up by the ID in the URL first: a repeat request is then
         # answered from the vault without any request to YouTube.
@@ -194,7 +215,7 @@ def _video_json(
             _emit_json(cached)
             return
 
-        result = transcribe.transcribe_video_fast(video_data, cfg)
+        result = transcribe.transcribe_video_fast(video_data)
         saved_path = storage.save_transcript(cfg, result)
         _emit_json({
             "path": str(saved_path),
@@ -226,7 +247,6 @@ def _emit_json(payload: dict[str, object]) -> None:
 
 def _video_nosave_json(
     url: str,
-    strategy: str | None = None,
     vault: str | None = None,
     folder: str | None = None,
 ) -> None:
@@ -239,14 +259,12 @@ def _video_nosave_json(
 
     Args:
         url: YouTube video URL to transcribe.
-        strategy: Optional per-run strategy override ('captions' or 'cloud').
         vault: Accepted for CLI parity; unused here since nothing is written.
         folder: Accepted for CLI parity; unused here since nothing is written.
     """
     try:
-        cfg = _config_with_overrides(strategy, vault, folder)
         video_data = extract_video_data(url)
-        result = transcribe.transcribe_video_fast(video_data, cfg)
+        result = transcribe.transcribe_video_fast(video_data)
         _emit_json({
             "title": result.video.title,
             "video_id": result.video.video_id,
@@ -262,7 +280,6 @@ def _video_nosave_json(
 
 def _playlist_json(
     url: str,
-    strategy: str | None = None,
     vault: str | None = None,
     folder: str | None = None,
 ) -> None:
@@ -280,12 +297,11 @@ def _playlist_json(
 
     Args:
         url: YouTube playlist URL.
-        strategy: Optional per-run strategy override ('captions' or 'cloud').
         vault: Optional vault root override.
         folder: Optional transcript subfolder override.
     """
     try:
-        cfg = _config_with_overrides(strategy, vault, folder)
+        cfg = _config_with_overrides(vault, folder)
         videos = download.get_playlist_info(url)
         transcripts: list[dict[str, object]] = []
         failed: list[dict[str, str]] = []
@@ -306,7 +322,7 @@ def _playlist_json(
 
             try:
                 video_data = extract_video_data(vid.url)
-                result = transcribe.transcribe_video_fast(video_data, cfg)
+                result = transcribe.transcribe_video_fast(video_data)
                 saved_path = storage.save_transcript(cfg, result)
             except YtTranscribeError as exc:
                 # One bad video (no captions, rate limit, private) must not
@@ -337,8 +353,9 @@ def _playlist_json(
 @cli.command()
 @click.argument("url")
 @click.option(
-    "--strategy", type=click.Choice(["captions", "cloud"]), default=None,
-    help="Override the configured strategy for this run.",
+    "--strategy", default=None, hidden=True, expose_value=False,
+    callback=_accept_captions_only,
+    help="Retired: accepted as 'captions' so older plugins keep working.",
 )
 @click.option(
     "--vault", default=None,
@@ -353,15 +370,14 @@ def _playlist_json(
     help="Emit a single JSON line with the per-video results (for tooling/plugins).",
 )
 def playlist(
-    url: str, strategy: str | None, vault: str | None,
-    folder: str | None, as_json: bool,
+    url: str, vault: str | None, folder: str | None, as_json: bool,
 ) -> None:
     """Transcribe all videos in a YouTube playlist (one file per video)."""
     if as_json:
-        _playlist_json(url, strategy, vault, folder)
+        _playlist_json(url, vault, folder)
         return
 
-    cfg = _config_with_overrides(strategy, vault, folder)
+    cfg = _config_with_overrides(vault, folder)
     videos = download.get_playlist_info(url)
     console.print(f"Found {len(videos)} videos in playlist")
 
@@ -376,7 +392,7 @@ def playlist(
         try:
             # Use optimized single-call pipeline per video
             video_data = extract_video_data(vid.url)
-            result = transcribe.transcribe_video_fast(video_data, cfg)
+            result = transcribe.transcribe_video_fast(video_data)
             storage.save_transcript(cfg, result)
         except YtTranscribeError as exc:
             # One bad video must not stop the rest of the playlist.
@@ -393,39 +409,6 @@ def playlist(
             f"[yellow]{failed_count} failed.[/yellow] Re-run this command to "
             "retry them; videos already saved are skipped."
         )
-
-
-@cli.command("setup-ffmpeg")
-@click.option("--url", default=None, help="Override the ffmpeg download URL.")
-@click.option(
-    "--json", "as_json", is_flag=True,
-    help="Emit a single JSON line with the result (for tooling/plugins).",
-)
-def setup_ffmpeg_cmd(url: str | None, as_json: bool) -> None:
-    """Download ffmpeg into ~/.yt-transcribe/bin for the cloud strategy."""
-    from yt_transcribe import ffmpeg_setup
-
-    if as_json:
-        try:
-            path = ffmpeg_setup.setup_ffmpeg(url=url)
-            _emit_json({"path": str(path), "configured": True})
-        except YtTranscribeError as exc:
-            _emit_json({"error": str(exc), "error_type": type(exc).__name__})
-            raise SystemExit(1) from None
-        return
-
-    def _show(done: int, total: int) -> None:
-        """Print a coarse download progress line."""
-        if total:
-            console.print(f"  downloading ffmpeg... {done * 100 // total}%", end="\r")
-
-    console.print("Setting up ffmpeg...")
-    try:
-        path = ffmpeg_setup.setup_ffmpeg(url=url, on_progress=_show)
-    except YtTranscribeError as exc:
-        console.print(f"[red]ffmpeg setup failed:[/red] {exc}")
-        raise SystemExit(1) from None
-    console.print(f"[green]ffmpeg ready:[/green] {path} (saved to config)")
 
 
 @cli.command("list")
@@ -478,7 +461,6 @@ def config(ctx: click.Context) -> None:
     table.add_column("Value")
     table.add_row("obsidian_vault_path", cfg.obsidian_vault_path)
     table.add_row("transcript_folder", cfg.transcript_folder)
-    table.add_row("transcription_strategy", cfg.transcription_strategy.value)
     console.print(table)
 
 
@@ -492,20 +474,7 @@ def config_set(key: str, value: str) -> None:
         raise SystemExit(1)
 
     cfg = load_config()
-
-    # Convert value to the correct type for the given key
-    new_val: str | TranscriptionStrategy
-    if key == "transcription_strategy":
-        try:
-            new_val = TranscriptionStrategy(value)
-        except ValueError:
-            valid = ", ".join(s.value for s in TranscriptionStrategy)
-            console.print(f"[red]Invalid strategy:[/red] {value} (valid: {valid})")
-            raise SystemExit(1) from None
-    else:
-        new_val = value
-
-    updated = replace(cfg, **{key: new_val})  # type: ignore[arg-type]
+    updated = replace(cfg, **{key: value})
     config_mod.save_config(updated)
     console.print(f"[green]Set {key} = {value}[/green]")
 

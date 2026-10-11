@@ -128,7 +128,6 @@ def _cache_hit_result(
 
 async def handle_get_transcript(
     video_url: str,
-    strategy: str | None = None,
     include_text: bool = False,
     output_dir: str | None = None,
 ) -> dict[str, Any]:
@@ -139,7 +138,6 @@ async def handle_get_transcript(
 
     Args:
         video_url: YouTube video URL.
-        strategy: Transcription strategy override (captions or cloud).
         include_text: If True, include full transcript text in response.
         output_dir: Absolute directory to write into; when given, both the
             cache check and the save target are rooted here instead of the
@@ -164,11 +162,10 @@ async def handle_get_transcript(
             return _cache_hit_result(video_id, existing_path, include_text)
 
     # Cache miss: delegate to subprocess worker
-    await _log(f"Transcribing video (strategy: {strategy or 'captions'})...")
+    await _log("Transcribing video...")
     result = await _run_worker({
         "command": "get_transcript",
         "video_url": video_url,
-        "strategy": strategy,
         "include_text": include_text,
         "output_dir": output_dir,
     })
@@ -181,7 +178,6 @@ async def handle_get_transcript(
 
 async def handle_get_playlist_transcripts(
     playlist_url: str,
-    strategy: str | None = None,
     include_text: bool = False,
     output_dir: str | None = None,
 ) -> dict[str, Any]:
@@ -189,7 +185,6 @@ async def handle_get_playlist_transcripts(
 
     Args:
         playlist_url: YouTube playlist URL.
-        strategy: Transcription strategy override (captions or cloud).
         include_text: If True, include full transcript text per video.
         output_dir: Absolute directory to write into; when given, the playlist
             transcripts are saved here instead of the configured vault.
@@ -198,11 +193,10 @@ async def handle_get_playlist_transcripts(
         Dict with per-video results carrying paths and source provenance, and
         a 'failed' list for videos that could not be transcribed.
     """
-    await _log(f"Processing playlist (strategy: {strategy or 'captions'})...")
+    await _log("Processing playlist...")
     result = await _run_worker({
         "command": "get_playlist_transcripts",
         "playlist_url": playlist_url,
-        "strategy": strategy,
         "include_text": include_text,
         "output_dir": output_dir,
     })
@@ -279,7 +273,6 @@ async def handle_server_status() -> dict[str, Any]:
         "active_tool": _active_tool,
         "last_tool_called": _last_tool_call,
         "config": {
-            "strategy": str(config.transcription_strategy.value),
             "vault_path": str(config.obsidian_vault_path),
         },
     }
@@ -289,12 +282,10 @@ async def handle_server_status() -> dict[str, Any]:
 
 _TOOL_HANDLERS: dict[str, Any] = {
     "get_transcript": lambda args: handle_get_transcript(
-        args["video_url"], args.get("strategy"),
-        args.get("include_text", False), args.get("output_dir"),
+        args["video_url"], args.get("include_text", False), args.get("output_dir"),
     ),
     "get_playlist_transcripts": lambda args: handle_get_playlist_transcripts(
-        args["playlist_url"], args.get("strategy"),
-        args.get("include_text", False), args.get("output_dir"),
+        args["playlist_url"], args.get("include_text", False), args.get("output_dir"),
     ),
     "get_transcripts": lambda args: handle_get_transcripts(
         args["urls"], args.get("include_text", False), args.get("output_dir"),

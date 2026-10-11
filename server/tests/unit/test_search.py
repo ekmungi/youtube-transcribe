@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from yt_transcribe.models import Config, TranscriptionStrategy
+from yt_transcribe.models import Config
 from yt_transcribe.search import SearchResult, search_transcripts
 
 
@@ -13,7 +13,7 @@ def _make_config(tmp_path: Path) -> Config:
     return Config(
         obsidian_vault_path=str(tmp_path / "vault"),
         transcript_folder="Sources/YouTube Transcripts",
-        transcription_strategy=TranscriptionStrategy.CAPTIONS,    )
+    )
 
 
 def _write_md(folder: Path, name: str, content: str) -> Path:
