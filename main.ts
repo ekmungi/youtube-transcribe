@@ -12,13 +12,13 @@ import {
   PlaylistSuccess,
   runPlaylist,
   runTranscribe,
-  Strategy,
 } from "./cli";
 import { outdatedMessage, probeEngine } from "./engine-version";
 import { summarizePlaylist } from "./playlist-summary";
 import { classifyYoutubeUrl } from "./url-classify";
-import { ConfirmModal, UrlPromptModal } from "./ui";
-import { DEFAULT_SETTINGS, YttSettings, YttSettingTab } from "./settings";
+import { UrlPromptModal } from "./ui";
+import { YttSettingTab } from "./settings";
+import { DEFAULT_SETTINGS, mergeSettings, YttSettings } from "./settings-model";
 
 // Matches youtube.com watch/playlist/shorts/embed links and youtu.be/... links.
 // Broad on purpose: it only gates clipboard validation; classifyYoutubeUrl then
@@ -77,12 +77,13 @@ export default class YouTubeTranscribePlugin extends Plugin {
   }
 
   /**
-   * Load persisted settings, merging over defaults.
+   * Load persisted settings, filling in defaults and dropping keys that older
+   * versions saved (see mergeSettings).
    * @returns A promise that resolves once settings are loaded.
    */
   async loadSettings(): Promise<void> {
-    const data = (await this.loadData()) as Partial<YttSettings> | null;
-    this.settings = { ...DEFAULT_SETTINGS, ...(data ?? {}) };
+    const data = (await this.loadData()) as Record<string, unknown> | null;
+    this.settings = mergeSettings(data);
   }
 
   /**
@@ -131,7 +132,7 @@ export default class YouTubeTranscribePlugin extends Plugin {
     }
 
     new UrlPromptModal(this.app, prefill, (url) => {
-      void this.runFlow(url, this.settings.defaultStrategy);
+      void this.runFlow(url);
     }).open();
   }
 
@@ -154,7 +155,7 @@ export default class YouTubeTranscribePlugin extends Plugin {
       return;
     }
 
-    await this.runFlow(clip.trim(), this.settings.defaultStrategy);
+    await this.runFlow(clip.trim());
   }
 
   /**
@@ -163,35 +164,32 @@ export default class YouTubeTranscribePlugin extends Plugin {
    * video and report the count.
    *
    * @param url The YouTube URL (single video or playlist).
-   * @param strategy Strategy for this attempt ("captions" or "cloud").
    * @returns A promise that resolves once the attempt is fully handled.
    */
-  private async runFlow(url: string, strategy: Strategy): Promise<void> {
+  private async runFlow(url: string): Promise<void> {
     void this.checkEngineOnce();
     if (classifyYoutubeUrl(url) === "playlist") {
-      await this.runPlaylistFlow(url, strategy);
+      await this.runPlaylistFlow(url);
       return;
     }
-    await this.runVideoFlow(url, strategy);
+    await this.runVideoFlow(url);
   }
 
   /**
    * Single-video flow: run the CLI, then open or report the result. Handles
-   * success, known CLI errors (with an optional cloud retry), and spawn
-   * failures (e.g. missing executable).
+   * success, known CLI errors (such as a video without captions, whose message
+   * is shown as it is), and spawn failures (e.g. missing executable).
    *
    * @param url The YouTube video URL to transcribe.
-   * @param strategy Strategy for this attempt ("captions" or "cloud").
    * @returns A promise that resolves once the attempt is fully handled.
    */
-  private async runVideoFlow(url: string, strategy: Strategy): Promise<void> {
+  private async runVideoFlow(url: string): Promise<void> {
     // Persistent "Transcribing..." Notice (0 = stays until we hide it).
     const progress = new Notice("Transcribing...", 0);
     try {
       const result = await runTranscribe(
         this.settings.executablePath,
         url,
-        strategy,
         this.outputTarget()
       );
 
@@ -200,16 +198,8 @@ export default class YouTubeTranscribePlugin extends Plugin {
         return;
       }
 
-      // Known CLI error. Offer a cloud retry only when this attempt used
-      // captions, to avoid loops and pointless re-runs on other failures.
-      if (
-        result.error.error_type === "NoCaptionsError" &&
-        strategy === "captions"
-      ) {
-        this.offerCloudRetry(url);
-        return;
-      }
-
+      // Known CLI error: the engine's message already says what is wrong, for
+      // example that the video has no captions and so cannot be transcribed.
       new Notice(`Transcription failed: ${result.error.error}`);
     } catch (err) {
       // Spawn-level failure (executable missing or no parseable output).
@@ -226,16 +216,14 @@ export default class YouTubeTranscribePlugin extends Plugin {
    * errors and spawn failures.
    *
    * @param url The YouTube playlist URL.
-   * @param strategy Strategy for this run ("captions" or "cloud").
    * @returns A promise that resolves once the attempt is fully handled.
    */
-  private async runPlaylistFlow(url: string, strategy: Strategy): Promise<void> {
+  private async runPlaylistFlow(url: string): Promise<void> {
     const progress = new Notice("Transcribing playlist...", 0);
     try {
       const result = await runPlaylist(
         this.settings.executablePath,
         url,
-        strategy,
         this.outputTarget()
       );
 
@@ -268,25 +256,6 @@ export default class YouTubeTranscribePlugin extends Plugin {
       const message = err instanceof Error ? err.message : "Unknown error.";
       new Notice(`yt-transcribe failed to run: ${message}`);
     }
-  }
-
-  /**
-   * Show a confirmation modal offering a cloud-STT retry, and re-run the flow
-   * with the "cloud" strategy if the user agrees.
-   * @param url The YouTube URL to retry.
-   * @returns void
-   */
-  private offerCloudRetry(url: string): void {
-    new ConfirmModal(
-      this.app,
-      "No captions found",
-      "No captions for this video. Transcribe audio with cloud STT (AssemblyAI)?",
-      (confirmed) => {
-        if (confirmed) {
-          void this.runFlow(url, "cloud");
-        }
-      }
-    ).open();
   }
 
   /**

@@ -6,10 +6,6 @@
 
 import { execFile } from "child_process";
 
-// Strategy the CLI uses to obtain a transcript.
-// "captions" is instant and free; "cloud" sends audio to AssemblyAI.
-export type Strategy = "captions" | "cloud";
-
 /**
  * Successful CLI result. Mirrors the JSON the CLI prints on exit 0.
  * `path` is an absolute filesystem path to the created markdown note.
@@ -26,7 +22,7 @@ export interface CliSuccess {
 
 /**
  * Known-error CLI result. Mirrors the JSON the CLI prints on exit 1.
- * `error_type` lets callers branch (e.g. offer a cloud retry on NoCaptionsError).
+ * `error_type` lets callers branch (e.g. NoCaptionsError, CaptionFetchError).
  */
 export interface CliError {
   readonly error: string;
@@ -54,7 +50,7 @@ export class CliSpawnError extends Error {
   }
 }
 
-// Process limits: transcription (esp. cloud) can be slow and verbose.
+// Process limits: a transcription can be slow and verbose.
 const TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 const MAX_BUFFER = 10 * 1024 * 1024; // 10 MB
 
@@ -109,7 +105,39 @@ export interface OutputTarget {
 }
 
 /**
- * Run `yt-transcribe video <url> --json --strategy <strategy>` and parse it.
+ * Build the argument list for `yt-transcribe video`.
+ *
+ * @param url The YouTube URL to transcribe.
+ * @param target Optional vault/folder override for where the note is written.
+ * @returns The arguments, always asking for the single-line JSON result.
+ */
+export function videoArgs(url: string, target?: OutputTarget): string[] {
+  const args = ["video", url, "--json"];
+  if (target) {
+    // Pass both together: --folder alone would combine with the CLI's
+    // configured vault, which may not be this vault.
+    args.push("--vault", target.vault, "--folder", target.folder);
+  }
+  return args;
+}
+
+/**
+ * Build the argument list for `yt-transcribe playlist`.
+ *
+ * @param url The YouTube playlist URL to transcribe.
+ * @param target Optional vault/folder override for where the notes are written.
+ * @returns The arguments, always asking for the single-line JSON result.
+ */
+export function playlistArgs(url: string, target?: OutputTarget): string[] {
+  const args = ["playlist", url, "--json"];
+  if (target) {
+    args.push("--vault", target.vault, "--folder", target.folder);
+  }
+  return args;
+}
+
+/**
+ * Run `yt-transcribe video <url> --json` and parse it.
  *
  * Resolves with a CliResult (success or known error) whenever the CLI produced
  * a parseable JSON result line, even on exit code 1. Rejects with CliSpawnError
@@ -117,22 +145,15 @@ export interface OutputTarget {
  *
  * @param execPath Path to the yt-transcribe executable (or "yt-transcribe").
  * @param url The YouTube URL to transcribe.
- * @param strategy Transcription strategy ("captions" or "cloud").
  * @param target Optional vault/folder override for where the note is written.
  * @returns A promise resolving to a typed CliResult.
  */
 export function runTranscribe(
   execPath: string,
   url: string,
-  strategy: Strategy,
   target?: OutputTarget
 ): Promise<CliResult> {
-  const args = ["video", url, "--json", "--strategy", strategy];
-  if (target) {
-    // Pass both together: --folder alone would combine with the CLI's
-    // configured vault, which may not be this vault.
-    args.push("--vault", target.vault, "--folder", target.folder);
-  }
+  const args = videoArgs(url, target);
   return new Promise((resolve, reject) => {
     execFile(
       execPath,
@@ -235,7 +256,7 @@ export function parsePlaylistOutput(line: string): PlaylistResult {
 }
 
 /**
- * Run `yt-transcribe playlist <url> --json --strategy <strategy>` and parse it.
+ * Run `yt-transcribe playlist <url> --json` and parse it.
  *
  * Resolves with a PlaylistResult (success or known error) whenever the CLI
  * produced a parseable JSON line, even on exit code 1. Rejects with
@@ -244,20 +265,15 @@ export function parsePlaylistOutput(line: string): PlaylistResult {
  *
  * @param execPath Path to the yt-transcribe executable (or "yt-transcribe").
  * @param url The YouTube playlist URL to transcribe.
- * @param strategy Transcription strategy ("captions" or "cloud").
  * @param target Optional vault/folder override for where notes are written.
  * @returns A promise resolving to a typed PlaylistResult.
  */
 export function runPlaylist(
   execPath: string,
   url: string,
-  strategy: Strategy,
   target?: OutputTarget
 ): Promise<PlaylistResult> {
-  const args = ["playlist", url, "--json", "--strategy", strategy];
-  if (target) {
-    args.push("--vault", target.vault, "--folder", target.folder);
-  }
+  const args = playlistArgs(url, target);
   return new Promise((resolve, reject) => {
     execFile(
       execPath,
@@ -282,60 +298,6 @@ export function runPlaylist(
 
         const reason =
           err?.message ?? "CLI produced no parseable JSON output.";
-        reject(new CliSpawnError(reason, false));
-      }
-    );
-  });
-}
-
-// Result of an ffmpeg setup run: the install directory, or an error message.
-export type FfmpegSetupResult =
-  | { readonly ok: true; readonly path: string }
-  | { readonly ok: false; readonly error: string };
-
-// ffmpeg is a ~100 MB download; allow well beyond the transcription timeout.
-const SETUP_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
-
-/**
- * Run `yt-transcribe setup-ffmpeg --json` to download ffmpeg via the CLI.
- *
- * Resolves with the install path on success or a message on a known error.
- * Rejects with CliSpawnError only when the executable cannot be launched.
- *
- * @param execPath Path to the yt-transcribe executable (or "yt-transcribe").
- * @returns A promise resolving to the setup result.
- */
-export function runSetupFfmpeg(execPath: string): Promise<FfmpegSetupResult> {
-  return new Promise((resolve, reject) => {
-    execFile(
-      execPath,
-      ["setup-ffmpeg", "--json"],
-      { timeout: SETUP_TIMEOUT_MS, maxBuffer: MAX_BUFFER, windowsHide: true },
-      (err, stdout, stderr) => {
-        const errCode = (err as NodeJS.ErrnoException | null)?.code;
-        if (errCode === "ENOENT") {
-          reject(new CliSpawnError(`Executable not found: ${execPath}`, true));
-          return;
-        }
-
-        const line = lastNonEmptyLine(stdout) || lastNonEmptyLine(stderr);
-        if (line) {
-          try {
-            const parsed = JSON.parse(line) as Record<string, unknown>;
-            if (typeof parsed.error === "string") {
-              resolve({ ok: false, error: parsed.error });
-            } else if (typeof parsed.path === "string") {
-              resolve({ ok: true, path: parsed.path });
-            } else {
-              resolve({ ok: false, error: "Unexpected setup-ffmpeg output." });
-            }
-            return;
-          } catch {
-            // Fall through to the spawn-error path below if JSON was invalid.
-          }
-        }
-
-        const reason = err?.message ?? "setup-ffmpeg produced no JSON output.";
         reject(new CliSpawnError(reason, false));
       }
     );

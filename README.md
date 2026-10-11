@@ -106,15 +106,14 @@ The first time you transcribe in a session, the plugin checks the engine version
 needs. Update it with `uv tool upgrade yt-transcribe`.
 
 A ribbon icon in the left sidebar triggers the prompt. Settings cover the CLI
-executable path, default strategy, the transcript folder, and whether to open the
-note after transcribing.
+executable path, the transcript folder, and whether to open the note after
+transcribing.
 
 ## How transcription works
 
-The default `captions` strategy fetches a video's existing YouTube caption track
-(manual or auto-generated) - instant, free, nothing leaves YouTube. An opt-in
-`cloud` strategy sends audio to AssemblyAI for speech-to-text when a video has no
-captions; it requires an AssemblyAI API key and ffmpeg.
+The text always comes from a video's existing YouTube caption track (manual or
+auto-generated) - instant, free, nothing leaves YouTube. There is no other source:
+a video without captions cannot be transcribed, and the plugin or command says so.
 
 Every saved transcript is Markdown with YAML frontmatter recording its provenance
 (`source`, `caption_language`).

@@ -24,7 +24,7 @@ The last line of output is one JSON object.
 Tell the user the path. Read the note with the vault tools only if they want its content.
 
 ## When it fails
-- `NoCaptionsError`: the video has no captions. Say so and ask before retrying with `--strategy cloud`, which sends the audio to AssemblyAI and costs money.
-- `CaptionFetchError`: YouTube is rate limiting. Suggest retrying in a few minutes; do not offer cloud.
+- `NoCaptionsError`: the video has no captions, so it cannot be transcribed. Say so; there is no other source of text.
+- `CaptionFetchError`: YouTube is rate limiting. Suggest retrying in a few minutes.
 - `failed` entries in a playlist: list them. Running the same playlist again retries only those.
 - Command not found: run `yt-transcribe --version`, then reinstall with `uv tool install --reinstall --native-tls --python 3.12 "git+https://github.com/ekmungi/youtube-transcribe.git#subdirectory=server"`.
